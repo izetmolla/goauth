@@ -2,15 +2,14 @@ package goauth
 
 import (
 	"errors"
+	"net/http"
 	"strings"
-
-	"github.com/gofiber/fiber/v3"
 )
 
 // GetRoles extracts the "roles" claim as a []string. Several encodings
 // are accepted because the claim crosses JSON, jwt and DB boundaries.
-func (a *Authorization) GetRoles(ctx fiber.Ctx) ([]string, error) {
-	claims, err := a.GetClaims(ctx)
+func (a *Authorization) GetRoles(r *http.Request) ([]string, error) {
+	claims, err := a.GetClaims(r)
 	if err != nil {
 		return nil, err
 	}

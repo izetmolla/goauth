@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/gob"
 	"errors"
+	"net/http"
 	"time"
-
-	"github.com/gofiber/fiber/v3"
 )
 
 func init() {
@@ -76,16 +75,16 @@ type AuthData struct {
 // User returns the authenticated principal for the current request.
 // Pass fromAPI=true to read it out of the JWT instead of the session
 // cookie. The variadic shape preserves the original ergonomic API.
-func (a *Authorization) User(c fiber.Ctx, reqCtx context.Context, fromAPI ...bool) (*AuthData, error) {
+func (a *Authorization) User(r *http.Request, reqCtx context.Context, fromAPI ...bool) (*AuthData, error) {
 	useAPI := len(fromAPI) > 0 && fromAPI[0]
 	var (
 		data AuthData
 		err  error
 	)
 	if useAPI {
-		data, err = a.GetAuthDataAPI(c)
+		data, err = a.GetAuthDataAPI(r)
 	} else {
-		data, err = a.GetAuthDataWEB(c, reqCtx)
+		data, err = a.GetAuthDataWEB(r, reqCtx)
 	}
 	if err != nil {
 		return nil, err
@@ -95,8 +94,8 @@ func (a *Authorization) User(c fiber.Ctx, reqCtx context.Context, fromAPI ...boo
 
 // GetAuthDataAPI extracts the authenticated principal from a JWT-protected
 // request.
-func (a *Authorization) GetAuthDataAPI(ctx fiber.Ctx) (AuthData, error) {
-	claims, err := a.GetClaims(ctx)
+func (a *Authorization) GetAuthDataAPI(r *http.Request) (AuthData, error) {
+	claims, err := a.GetClaims(r)
 	if err != nil {
 		return AuthData{}, err
 	}
@@ -104,7 +103,7 @@ func (a *Authorization) GetAuthDataAPI(ctx fiber.Ctx) (AuthData, error) {
 		SessionID: stringClaim(claims, "session_id"),
 		UserID:    stringClaim(claims, "user_id"),
 	}
-	if roles, err := a.GetRoles(ctx); err == nil {
+	if roles, err := a.GetRoles(r); err == nil {
 		data.Roles = roles
 	} else {
 		data.Roles = []string{}
@@ -114,8 +113,8 @@ func (a *Authorization) GetAuthDataAPI(ctx fiber.Ctx) (AuthData, error) {
 
 // GetAuthDataWEB extracts the authenticated principal from a
 // cookie-protected request by loading the matching session row.
-func (a *Authorization) GetAuthDataWEB(ctx fiber.Ctx, reqCtx context.Context) (AuthData, error) {
-	session, err := a.GetSession(reqCtx, a.GetSessionID(ctx))
+func (a *Authorization) GetAuthDataWEB(r *http.Request, reqCtx context.Context) (AuthData, error) {
+	session, err := a.GetSession(reqCtx, a.GetSessionID(r))
 	if err != nil {
 		return AuthData{}, err
 	}

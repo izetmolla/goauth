@@ -1,11 +1,8 @@
 package goauth
 
 import (
-	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/gofiber/fiber/v3"
 )
 
 // CookieOptions overrides individual cookie definitions. Zero values fall back
@@ -201,52 +198,56 @@ func (c *cookieJar) nonce() CookieOption {
 
 // set writes a cookie with the given value. A non-positive maxAge other than the
 // option default leaves it as a session cookie.
-func setCookie(c fiber.Ctx, opt CookieOption, value string) {
-	cookie := fiber.Cookie{
+func setCookie(w http.ResponseWriter, opt CookieOption, value string) {
+	cookie := &http.Cookie{
 		Name:     opt.Name,
 		Value:    value,
 		Path:     opt.Path,
 		Domain:   opt.Domain,
-		HTTPOnly: opt.HTTPOnly,
+		HttpOnly: opt.HTTPOnly,
 		Secure:   opt.Secure,
-		SameSite: fmt.Sprint(opt.SameSite),
+		SameSite: opt.SameSite,
 	}
 	if opt.MaxAge > 0 {
 		cookie.MaxAge = int(opt.MaxAge.Seconds())
 		cookie.Expires = time.Now().Add(opt.MaxAge)
 	}
-	c.Cookie(&cookie)
+	http.SetCookie(w, cookie)
 }
 
 // expireOAuthFlowCookies clears transient OAuth cookies so they do not accumulate
 // across repeated sign-in attempts and inflate the Cookie header.
-func (c *cookieJar) expireOAuthFlowCookies(ctx fiber.Ctx) {
-	expireCookie(ctx, c.state())
-	expireCookie(ctx, c.pkceCodeVerifier())
-	expireCookie(ctx, c.nonce())
-	expireCookie(ctx, c.callbackURL())
-	expireCookie(ctx, c.flow())
-	expireCookie(ctx, c.connectResource())
+func (c *cookieJar) expireOAuthFlowCookies(w http.ResponseWriter) {
+	expireCookie(w, c.state())
+	expireCookie(w, c.pkceCodeVerifier())
+	expireCookie(w, c.nonce())
+	expireCookie(w, c.callbackURL())
+	expireCookie(w, c.flow())
+	expireCookie(w, c.connectResource())
 }
 
 // expire removes a cookie by setting it to an immediately-expired empty value.
-func expireCookie(c fiber.Ctx, opt CookieOption) {
-	c.Cookie(&fiber.Cookie{
+func expireCookie(w http.ResponseWriter, opt CookieOption) {
+	http.SetCookie(w, &http.Cookie{
 		Name:     opt.Name,
 		Value:    "",
 		Path:     opt.Path,
 		Domain:   opt.Domain,
-		HTTPOnly: opt.HTTPOnly,
+		HttpOnly: opt.HTTPOnly,
 		Secure:   opt.Secure,
-		SameSite: fmt.Sprint(opt.SameSite),
+		SameSite: opt.SameSite,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
 }
 
 // readCookie returns the value of the named cookie, or "".
-func readCookie(c fiber.Ctx, name string) string {
-	return c.Cookies(name, "")
+func readCookie(r *http.Request, name string) string {
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
 }
 
 // jar builds the per-request cookie jar.

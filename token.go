@@ -3,10 +3,10 @@ package goauth
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -178,7 +178,7 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 // other for Social Login
 // wantsTokens reports whether the response should be tokens (JSON) rather than a
 // session cookie + redirect.
-func (a *Authorization) wantsTokens(c fiber.Ctx) bool {
+func (a *Authorization) wantsTokens(r *http.Request) bool {
 	//Need to implement this
 	// if !a.cfg.Tokens.Enabled {
 	// 	return false
@@ -186,14 +186,14 @@ func (a *Authorization) wantsTokens(c fiber.Ctx) bool {
 	// if a.cfg.Tokens.AlwaysReturn {
 	// 	return true
 	// }
-	return strings.EqualFold(c.Get("X-Auth-Flow"), "token") || c.Query("flow") == "token"
+	return strings.EqualFold(r.Header.Get("X-Auth-Flow"), "token") || r.URL.Query().Get("flow") == "token"
 }
 
 // checkCSRF validates the signed double-submit token for unsafe actions.
-func (a *Authorization) checkCSRF(c fiber.Ctx, secure bool) bool {
+func (a *Authorization) checkCSRF(r *http.Request, secure bool) bool {
 	jar := a.jar(secure)
-	cookieVal := readCookie(c, jar.csrfToken().Name)
-	body := c.FormValue("csrfToken")
+	cookieVal := readCookie(r, jar.csrfToken().Name)
+	body := r.FormValue("csrfToken")
 	_, ok := verifyCSRF(cookieVal, body, a.JWTSecret)
 	return ok
 }

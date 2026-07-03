@@ -8,13 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/gofiber/fiber/v3"
 )
 
 // origin resolves the external base URL and whether it is HTTPS, honoring
 // Config.AuthURL and request headers when AuthURL is unset.
-func (a *Authorization) origin(c fiber.Ctx) (string, bool, error) {
+func (a *Authorization) origin(r *http.Request) (string, bool, error) {
 	if a == nil {
 		return "", false, fmt.Errorf("authorization is not initialized")
 	}
@@ -25,12 +23,12 @@ func (a *Authorization) origin(c fiber.Ctx) (string, bool, error) {
 	// 	return "", false, fmt.Errorf("untrusted host: %s", a.AuthURL)
 	// }
 	scheme := "http"
-	isSecure := c.Protocol() == "https"
+	isSecure := isSecureRequest(r)
 	if isSecure {
 		scheme = "https"
 	}
-	host := c.Host()
-	if fwd := c.Get("X-Forwarded-Host"); fwd != "" {
+	host := r.Host
+	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
 		host = fwd
 	}
 
@@ -59,17 +57,19 @@ func parseOriginURL(raw string) (string, bool, error) {
 
 // callbackQuery returns OAuth callback parameters from the query string, merging
 // POST form fields when a provider uses response_mode=form_post (e.g. Sign in with Apple).
-func callbackQuery(c fiber.Ctx) map[string]string {
-	q := c.Queries()
+func callbackQuery(r *http.Request) map[string]string {
+	q := r.URL.Query()
 	merged := make(map[string]string, len(q)+4)
-	for k, v := range q {
-		merged[k] = v
+	for k, vs := range q {
+		if len(vs) > 0 {
+			merged[k] = vs[0]
+		}
 	}
-	if c.Method() == fiber.MethodPost {
-		for key, value := range c.RequestCtx().PostArgs().All() {
-			k := string(key)
-			if v := string(value); v != "" && merged[k] == "" {
-				merged[k] = v
+	if r.Method == http.MethodPost {
+		_ = r.ParseForm()
+		for k, vs := range r.PostForm {
+			if len(vs) > 0 && vs[0] != "" && merged[k] == "" {
+				merged[k] = vs[0]
 			}
 		}
 	}

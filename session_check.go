@@ -3,9 +3,9 @@ package goauth
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
-	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 )
 
@@ -18,13 +18,13 @@ type CheckSessionResult struct {
 
 // CheckSession validates an existing refresh token and session, refreshes the
 // access token with up-to-date roles, and sets the WEB session cookie.
-func (a *Authorization) CheckSession(c fiber.Ctx) (*CheckSessionResult, error) {
+func (a *Authorization) CheckSession(w http.ResponseWriter, r *http.Request) (*CheckSessionResult, error) {
 	if a == nil {
 		return nil, ErrNotInitialized
 	}
-	refreshToken, err := a.GetTokenFromHeader(c.Get("Authorization"))
+	refreshToken, err := a.GetTokenFromHeader(r.Header.Get("Authorization"))
 	if err != nil {
-		refreshToken = bodyRefreshToken(c)
+		refreshToken = bodyRefreshToken(r)
 	}
 	if refreshToken == "" {
 		return nil, ErrMissingRefreshToken
@@ -38,7 +38,7 @@ func (a *Authorization) CheckSession(c fiber.Ctx) (*CheckSessionResult, error) {
 		return nil, ErrInvalidRefreshToken
 	}
 
-	ctx := c.Context()
+	ctx := r.Context()
 
 	if err := a.ensureSessionActive(ctx, claims.SessionID); err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (a *Authorization) CheckSession(c fiber.Ctx) (*CheckSessionResult, error) {
 		return nil, err
 	}
 
-	a.SetSessionIDCookie(c, session.ID)
+	a.SetSessionIDCookie(w, r, session.ID)
 
 	return &CheckSessionResult{
 		Tokens: Tokens{

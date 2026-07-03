@@ -229,12 +229,12 @@ default:
 
 ### Wiring into the authorization package
 
-LDAP validates credentials and supplies directory metadata; sessions and JWTs stay in `goauth.SignIn`:
+LDAP validates credentials and supplies directory metadata; sessions and JWTs stay in goauth. The simplest integration is through the [credentials provider](../credentials/README.md)'s `Authorize` function:
 
 1. `user, err := client.Login(email, password)`
 2. Find or provision the app user from `user.Email` / `user.Username`
 3. Optionally sync `user.Roles` into your user record or JWT `roles` claim
-4. Issue tokens with `tokenManager.Authorize`
+4. Return the user (goauth creates the session and signs the token pair), or issue tokens manually with `auth.Authorize(...)`
 
 ## Errors
 

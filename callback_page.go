@@ -5,32 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-
-	"github.com/gofiber/fiber/v3"
+	"net/http"
 )
 
 // renderCallbackPage renders a small HTML page that persists the token
 // response in localStorage under "authorization-storage" (matching the
 // frontend zustand persist format) and either notifies the opener (popup
 // flow) or redirects to the saved redirect URL (redirect flow).
-func (a *Authorization) renderCallbackPage(c fiber.Ctx, data any) error {
+func (a *Authorization) renderCallbackPage(w http.ResponseWriter, data any) {
 	dataMap := map[string]any{
 		"title": "Signing in…",
 	}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		// a.writeError(w, http.StatusInternalServerError, newError(KindJWTSessionError, "encode token response", err))
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		writeJSON(w, http.StatusInternalServerError, Map{
 			"message": "Failed to encode token response",
 			"code":    "ERROR",
 		})
+		return
 	}
-	c.Set("Content-Type", "text/html; charset=utf-8")
-	c.Set("Cache-Control", "no-store")
 	// Parse the template
 	tmpl, err := template.New("index.html").Parse(tokenCallbackHTML)
 	if err != nil {
-		return c.SendString(err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	dataMap["globalOptions"] = template.HTML(fmt.Sprintf(`<script id="__GLOBAL_DATA__" data-app="%s" type="application/json">%s</script>`, "", string(jsonData)))
 
@@ -38,10 +37,13 @@ func (a *Authorization) renderCallbackPage(c fiber.Ctx, data any) error {
 	// // Execute template
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, dataMap); err != nil {
-		return c.SendString(err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	return c.SendString(buf.String())
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(buf.Bytes())
 }
 
 const tokenCallbackHTML = `<!doctype html>

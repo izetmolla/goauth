@@ -34,3 +34,9 @@ func NewAuthConfigOptions(opts ...AuthConfigOptions) *AuthConfig {
 func (a *Authorization) WithExcludedPaths(paths []string) AuthConfigOptions {
 	return func(c *AuthConfig) { c.excludedPaths = paths }
 }
+
+// WithRoles gates the route behind the given role names; the authenticated
+// user must hold at least one of them.
+func (a *Authorization) WithRoles(roles []string) AuthConfigOptions {
+	return func(c *AuthConfig) { c.roles = roles }
+}

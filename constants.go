@@ -25,4 +25,8 @@ var (
 
 	DefaultCookieSessionName = "cnf.id"
 	DefaultSignInRedirectURL = "/sign-in"
+
+	// DefaultBasePath is the URL prefix under which Handler mounts the
+	// authorization endpoints.
+	DefaultBasePath = "/api/authorization"
 )

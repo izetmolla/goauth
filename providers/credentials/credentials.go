@@ -8,8 +8,8 @@ package credentials
 
 import (
 	"context"
+	"net/http"
 
-	"github.com/gofiber/fiber/v3"
 	"github.com/izetmolla/goauth"
 )
 
@@ -18,7 +18,7 @@ type Options struct {
 	ID        string
 	Name      string
 	Fields    []goauth.CredentialField
-	Authorize func(ctx context.Context, credentials map[string]string, c fiber.Ctx) (*goauth.User, error)
+	Authorize func(ctx context.Context, credentials map[string]string, r *http.Request) (*goauth.OAuthUser, error)
 }
 
 // New builds a credentials provider. Authorize is required. Credentials sessions
@@ -36,6 +36,6 @@ func New(o Options) goauth.Provider {
 		ProviderID:  id,
 		DisplayName: name,
 		Fields:      o.Fields,
-		// Authorize:   o.Authorize,
+		Authorize:   o.Authorize,
 	}
 }

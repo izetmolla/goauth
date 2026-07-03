@@ -6,9 +6,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"strings"
-
-	"github.com/gofiber/fiber/v3"
 )
 
 const (
@@ -36,7 +35,7 @@ func verifyFlowIntentCookie(cookieValue, intent, secret string) bool {
 }
 
 // SetFlowIntentCookie stores a signed, short-lived intent marker for the OAuth round-trip.
-func (a *Authorization) SetFlowIntentCookie(c fiber.Ctx, intent string) error {
+func (a *Authorization) SetFlowIntentCookie(w http.ResponseWriter, r *http.Request, intent string) error {
 	if a == nil {
 		return ErrNotInitialized
 	}
@@ -46,20 +45,20 @@ func (a *Authorization) SetFlowIntentCookie(c fiber.Ctx, intent string) error {
 	if a.JWTSecret == "" {
 		return errors.New("JWTSecret is required to sign flow intent")
 	}
-	_, secure, err := a.origin(c)
+	_, secure, err := a.origin(r)
 	if err != nil {
 		return err
 	}
-	setCookie(c, a.jar(secure).flowIntent(), signedFlowIntentValue(intent, a.JWTSecret))
+	setCookie(w, a.jar(secure).flowIntent(), signedFlowIntentValue(intent, a.JWTSecret))
 	return nil
 }
 
-func (a *Authorization) consumeFlowIntent(c fiber.Ctx, jar *cookieJar, intent string) bool {
+func (a *Authorization) consumeFlowIntent(w http.ResponseWriter, r *http.Request, jar *cookieJar, intent string) bool {
 	if a == nil || jar == nil || intent == "" || a.JWTSecret == "" {
 		return false
 	}
-	cookie := readCookie(c, jar.flowIntent().Name)
-	expireCookie(c, jar.flowIntent())
+	cookie := readCookie(r, jar.flowIntent().Name)
+	expireCookie(w, jar.flowIntent())
 	if cookie == "" {
 		return false
 	}

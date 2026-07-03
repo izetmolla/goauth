@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -236,21 +235,21 @@ func accountToJSONB(account *Account) JSONBAny {
 
 // GetSessionID returns the session id carried by the request's session
 // cookie, or "" when absent.
-func (a *Authorization) GetSessionID(c fiber.Ctx) string {
-	return c.Cookies(a.cookieSessionName)
+func (a *Authorization) GetSessionID(r *http.Request) string {
+	return readCookie(r, a.cookieSessionName)
 }
 
 // SetSessionIDCookie writes the WEB session cookie used by UseWEBAuthorization.
-func (a *Authorization) SetSessionIDCookie(c fiber.Ctx, sessionID string) {
+func (a *Authorization) SetSessionIDCookie(w http.ResponseWriter, r *http.Request, sessionID string) {
 	if sessionID == "" {
 		return
 	}
-	secure := c.Protocol() == "https" || c.Secure()
+	secure := isSecureRequest(r)
 	maxAge := 365 * 24 * time.Hour
 	if d, err := ParseCustomDuration(a.refreshTokenDuration, DefaultRefreshTokenDuration); err == nil {
 		maxAge = d
 	}
-	setCookie(c, CookieOption{
+	setCookie(w, CookieOption{
 		Name:     a.cookieSessionName,
 		HTTPOnly: true,
 		SameSite: http.SameSiteLaxMode,
