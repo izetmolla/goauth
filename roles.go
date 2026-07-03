@@ -1,0 +1,183 @@
+package goauth
+
+import (
+	"errors"
+	"strings"
+
+	"github.com/gofiber/fiber/v3"
+)
+
+// GetRoles extracts the "roles" claim as a []string. Several encodings
+// are accepted because the claim crosses JSON, jwt and DB boundaries.
+func (a *Authorization) GetRoles(ctx fiber.Ctx) ([]string, error) {
+	claims, err := a.GetClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	raw, ok := claims["roles"]
+	if !ok || raw == nil {
+		return nil, ErrInvalidRoles
+	}
+	return rolesFromAny(raw)
+}
+
+// GetRole checks authorization against endpoint role names and user role grants.
+//
+// endpointRoles are plain names required by the route (e.g. "admin", "hr").
+// userRoles use "name:perms" where perms is r (read), w (write), or rw (both).
+//
+// Returns:
+//   - hasRole: user has at least one endpoint role (name match before ":")
+//   - canRead: matched grant includes r or rw
+//   - canWrite: matched grant includes w or rw
+func (a *Authorization) GetRole(endpointRoles, userRoles []string) (hasRole, canRead, canWrite bool) {
+	if len(endpointRoles) == 0 || len(userRoles) == 0 {
+		return false, false, false
+	}
+
+	allowed := make(map[string]struct{}, len(endpointRoles))
+	for _, r := range endpointRoles {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		// Allow endpoint config like "admin:rw" — only the role name is compared.
+		if name, _, ok := strings.Cut(r, ":"); ok {
+			r = strings.TrimSpace(name)
+		}
+		allowed[strings.ToLower(r)] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return false, false, false
+	}
+
+	for _, userRole := range userRoles {
+		name, perms, ok := parseUserRoleGrant(userRole)
+		if !ok {
+			continue
+		}
+		if _, ok := allowed[strings.ToLower(name)]; !ok {
+			continue
+		}
+		hasRole = true
+		if roleGrantAllowsRead(perms) {
+			canRead = true
+		}
+		if roleGrantAllowsWrite(perms) {
+			canWrite = true
+		}
+	}
+	return hasRole, canRead, canWrite
+}
+
+func parseUserRoleGrant(userRole string) (name, perms string, ok bool) {
+	userRole = strings.TrimSpace(userRole)
+	if userRole == "" {
+		return "", "", false
+	}
+	name, perms, found := strings.Cut(userRole, ":")
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", "", false
+	}
+	if found {
+		perms = strings.TrimSpace(strings.ToLower(perms))
+	}
+	return name, perms, true
+}
+
+func roleGrantAllowsRead(perms string) bool {
+	return strings.Contains(perms, "r")
+}
+
+func roleGrantAllowsWrite(perms string) bool {
+	return strings.Contains(perms, "w")
+}
+
+// rolesFromAny decodes whatever the JWT library handed us for the
+// "roles" claim into a clean []string.
+func rolesFromAny(raw any) ([]string, error) {
+	switch v := raw.(type) {
+	case []string:
+		return v, nil
+	case JSONBArray:
+		return FormatRoles(JSONBArray(v)), nil
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return nil, ErrInvalidRoles
+		}
+		if strings.HasPrefix(s, "[") {
+			return FormatRoles(JSONBArray([]any{s})), nil
+		}
+		return []string{s}, nil
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, x := range v {
+			s, ok := x.(string)
+			if !ok {
+				return nil, ErrInvalidRoles
+			}
+			out = append(out, s)
+		}
+		return out, nil
+	default:
+		return nil, ErrInvalidRoles
+	}
+}
+
+// FormatRoles unmarshals a JSON role list into grant strings (e.g. "admin:rw").
+// It accepts string arrays, mixed JSON arrays, and a single grant string.
+func FormatRoles(roles JSONBArray) []string {
+	if len(roles) == 0 {
+		return []string{}
+	}
+
+	var strs []string
+	if err := roles.Scan(&strs); err == nil {
+		return normalizeRoleGrants(strs)
+	}
+
+	var anySlice []any
+	if err := roles.Scan(&anySlice); err == nil {
+		return roleGrantsFromAnySlice(anySlice)
+	}
+
+	var single string
+	if err := roles.Scan(&single); err == nil {
+		return normalizeRoleGrants([]string{single})
+	}
+
+	return []string{}
+}
+
+func normalizeRoleGrants(grants []string) []string {
+	if len(grants) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(grants))
+	for _, g := range grants {
+		g = strings.TrimSpace(g)
+		if g != "" {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func roleGrantsFromAnySlice(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		switch v := item.(type) {
+		case string:
+			if s := strings.TrimSpace(v); s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// compile-time assertion that errors.New (and therefore errors.Is) still
+// works on our sentinels even if someone wraps them.
+var _ = errors.Is
