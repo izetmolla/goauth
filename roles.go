@@ -125,29 +125,15 @@ func rolesFromAny(raw any) ([]string, error) {
 	}
 }
 
-// FormatRoles unmarshals a JSON role list into grant strings (e.g. "admin:rw").
-// It accepts string arrays, mixed JSON arrays, and a single grant string.
+// FormatRoles converts a JSONB role list into grant strings (e.g. "admin:rw").
+// JSONBArray is already []any from DB/JSON unmarshaling — convert elements
+// directly. Do not use Scan here: Scan implements database/sql.Scanner and
+// expects []byte/string JSON input, not a destination pointer.
 func FormatRoles(roles JSONBArray) []string {
 	if len(roles) == 0 {
 		return []string{}
 	}
-
-	var strs []string
-	if err := roles.Scan(&strs); err == nil {
-		return normalizeRoleGrants(strs)
-	}
-
-	var anySlice []any
-	if err := roles.Scan(&anySlice); err == nil {
-		return roleGrantsFromAnySlice(anySlice)
-	}
-
-	var single string
-	if err := roles.Scan(&single); err == nil {
-		return normalizeRoleGrants([]string{single})
-	}
-
-	return []string{}
+	return normalizeRoleGrants(roleGrantsFromAnySlice([]any(roles)))
 }
 
 func normalizeRoleGrants(grants []string) []string {
