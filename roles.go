@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -95,31 +96,33 @@ func roleGrantAllowsWrite(perms string) bool {
 
 // rolesFromAny decodes whatever the JWT library handed us for the
 // "roles" claim into a clean []string.
+//
+// Note: JWT claims decode JSON arrays as []any, so that branch is the hot
+// path for API requests. All slice shapes are funneled through FormatRoles
+// so trimming/blank-dropping behaves identically everywhere.
 func rolesFromAny(raw any) ([]string, error) {
 	switch v := raw.(type) {
 	case []string:
-		return v, nil
+		return normalizeRoleGrants(v), nil
 	case JSONBArray:
-		return FormatRoles(JSONBArray(v)), nil
+		return FormatRoles(v), nil
 	case string:
 		s := strings.TrimSpace(v)
 		if s == "" {
 			return nil, ErrInvalidRoles
 		}
+		// A JSON-encoded array (e.g. `["admin:rw","hr:r"]`) must be parsed,
+		// not wrapped as a single grant string.
 		if strings.HasPrefix(s, "[") {
-			return FormatRoles(JSONBArray([]any{s})), nil
+			var arr JSONBArray
+			if err := json.Unmarshal([]byte(s), &arr); err != nil {
+				return nil, ErrInvalidRoles
+			}
+			return FormatRoles(arr), nil
 		}
 		return []string{s}, nil
 	case []any:
-		out := make([]string, 0, len(v))
-		for _, x := range v {
-			s, ok := x.(string)
-			if !ok {
-				return nil, ErrInvalidRoles
-			}
-			out = append(out, s)
-		}
-		return out, nil
+		return FormatRoles(JSONBArray(v)), nil
 	default:
 		return nil, ErrInvalidRoles
 	}

@@ -124,7 +124,9 @@ func (a *Authorization) UseWEBAuthorization(opts ...AuthConfigOptions) Middlewar
 
 			session, err := a.GetSession(r.Context(), sessionID)
 			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
+				if errors.Is(err, gorm.ErrRecordNotFound) ||
+					errors.Is(err, ErrSessionNotFound) ||
+					errors.Is(err, ErrSessionExpired) {
 					http.Redirect(w, r, a.getAuthRedirectURL(r), http.StatusTemporaryRedirect)
 					return
 				}

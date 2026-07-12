@@ -99,9 +99,15 @@ func (d *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) 
 	if err := d.db.
 		WithContext(ctx).
 		Table(d.sessionsTable()).
-		Where("id = ?", sessionID).
+		Where("id = ? AND is_deleted = ?", sessionID, false).
 		First(&session).Error; err != nil {
 		return &session, err
+	}
+	// The Redis path validates liveness via ensureSessionActive; the DB
+	// fallback must apply the same rules or logged-out/expired sessions
+	// keep authenticating.
+	if err := sessionUsable(&session); err != nil {
+		return nil, err
 	}
 	if err := d.db.WithContext(ctx).
 		Table(d.userTableName).

@@ -152,7 +152,7 @@ func cnFromDNs(dns []string) []string {
 }
 
 func cnFromDN(dn string) string {
-	for _, part := range strings.Split(dn, ",") {
+	for part := range strings.SplitSeq(dn, ",") {
 		part = strings.TrimSpace(part)
 		if len(part) > 3 && strings.EqualFold(part[:3], "CN=") {
 			return part[3:]

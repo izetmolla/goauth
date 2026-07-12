@@ -90,9 +90,17 @@ func (a *Authorization) ensureSessionActive(ctx context.Context, sessionID strin
 		return err
 	}
 
-	if !session.ExpiresAt.IsZero() && time.Now().After(session.ExpiresAt) {
+	return sessionUsable(&session)
+}
+
+// sessionUsable reports whether a loaded session row may still authenticate
+// requests: it must not be soft-deleted and must not be past its expiry.
+func sessionUsable(s *Session) error {
+	if s == nil || s.IsDeleted {
+		return ErrSessionNotFound
+	}
+	if !s.ExpiresAt.IsZero() && time.Now().After(s.ExpiresAt) {
 		return ErrSessionExpired
 	}
-
 	return nil
 }

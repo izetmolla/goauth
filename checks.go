@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
+	"slices"
 )
 
 // randomString returns a URL-safe random string with the given number of bytes
@@ -26,10 +27,5 @@ func providerUsesCheck(p *OAuthProvider, check Check) bool {
 	if p == nil {
 		return false
 	}
-	for _, c := range p.Checks {
-		if c == check {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Checks, check)
 }

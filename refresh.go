@@ -54,9 +54,16 @@ func (a *Authorization) HandleRefreshToken(next http.Handler) http.Handler {
 
 		session, err := a.GetSession(ctx, claims.SessionID)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrSessionNotFound) {
 				writeJSON(w, http.StatusUnauthorized, Map{
 					"error": ErrSessionNotFound.Error(),
+					"code":  "UNAUTHORIZED",
+				})
+				return
+			}
+			if errors.Is(err, ErrSessionExpired) {
+				writeJSON(w, http.StatusUnauthorized, Map{
+					"error": ErrSessionExpired.Error(),
 					"code":  "UNAUTHORIZED",
 				})
 				return

@@ -156,9 +156,11 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 		return "", "", err
 	}
 	refreshClaims := &RefreshTokenClaims{
-		SessionID:           sessionID,
-		UserID:              o.userID,
-		AccessTokenLifetime: refreshTokenDuration.String(),
+		SessionID: sessionID,
+		UserID:    o.userID,
+		// "tokenlife" describes the access-token lifetime, not the refresh
+		// token's own lifetime.
+		AccessTokenLifetime: accessTokenDuration.String(),
 		SigningMethodHMAC:   a.signingMethod,
 		Content:             o.content,
 		Roles:               o.roles,

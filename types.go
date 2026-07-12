@@ -104,7 +104,7 @@ func (a *JSONBAny) Scan(value any) error {
 		*a = JSONBAny{}
 		return nil
 	}
-	var out map[string]interface{}
+	var out map[string]any
 	if err := json.Unmarshal(bytes, &out); err != nil {
 		return err
 	}
