@@ -1,0 +1,283 @@
+---
+title: net/http
+description: "Use goauth with the Go standard library: ServeMux, route patterns and middleware chains."
+---
+
+# net/http
+
+goauth is written for `net/http`, so no adapter is needed: `auth.Handler()` is an `http.Handler` and every middleware is a `func(http.Handler) http.Handler`.
+
+This page builds a complete app with Go 1.22+ route patterns (`"GET /api/me"`). The same `setup.go` is used on every framework page, so you can compare them side by side.
+
+## Install
+
+```bash
+go get github.com/izetmolla/goauth github.com/glebarez/sqlite gorm.io/gorm github.com/google/uuid
+```
+
+## Adapters at a glance
+
+| goauth value | How to use it in net/http |
+|---|---|
+| `auth.Handler()` | `mux.Handle(goauth.DefaultBasePath+"/", auth.Handler())` |
+| `auth.HandleRefreshToken(next)` | `mux.Handle("POST /api/token/refresh", auth.HandleRefreshToken(next))` |
+| `auth.UseAPIAuthorization(...)` | `mux.Handle(pattern, auth.UseAPIAuthorization()(handler))` |
+| Reading the caller | `auth.GetAuthDataAPI(r)`, `auth.GetClaims(r)` |
+
+## The shared setup
+
+`setup.go` opens a SQLite database, configures goauth with Google sign-in, and defines password sign-in (`passwordLogin`), sign-out (`logout`) and the refresh fallback as plain `net/http` handlers. Every framework page reuses it unchanged.
+
+```go title="setup.go"
+package main
+
+// setup.go — shared by every framework example on these pages.
+// It opens the database, configures goauth and defines password
+// sign-in and sign-out as plain net/http handlers.
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
+	"github.com/izetmolla/goauth"
+	"github.com/izetmolla/goauth/providers/google"
+	"gorm.io/gorm"
+)
+
+func newAuth() (*goauth.Authorization, *gorm.DB) {
+	db, err := gorm.Open(sqlite.Open("app.db"), &gorm.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		log.Fatal(err)
+	}
+	auth, err := goauth.New(&goauth.Config{
+		JWTSecret:           cmp.Or(os.Getenv("JWT_SECRET"), "dev-secret-change-me"),
+		AuthURL:             "http://localhost:3000",
+		AccessTokenDuration: "15m",
+		DB:                  db,
+		Providers: []goauth.Provider{
+			google.New(os.Getenv("GOOGLE_CLIENT_ID"), os.Getenv("GOOGLE_CLIENT_SECRET")),
+		},
+		ResolveUser: func(ctx context.Context, p goauth.Profile) (*goauth.User, bool, error) {
+			email, _ := p["email"].(string)
+			return findOrCreateUser(ctx, db, email)
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return auth, db
+}
+
+// findOrCreateUser returns the user with this email, creating it on first sign-in.
+func findOrCreateUser(ctx context.Context, db *gorm.DB, email string) (*goauth.User, bool, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, false, errors.New("email is required")
+	}
+	var u goauth.User
+	err := db.WithContext(ctx).Table("users").Select("id", "roles").Where("email = ?", email).Take(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		u = goauth.User{ID: uuid.NewString(), Roles: goauth.JSONBArray{"user:r"}}
+		err = db.WithContext(ctx).Exec(`INSERT INTO users (id, email, roles) VALUES (?, ?, ?)`,
+			u.ID, email, u.Roles).Error
+		return &u, true, err
+	}
+	return &u, false, err
+}
+
+// passwordLogin signs a user in with email + password and returns the token pair.
+func passwordLogin(auth *goauth.Authorization, db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Email, Password string }
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		var u struct{ ID, PasswordHash string }
+		err := db.WithContext(r.Context()).Table("users").Select("id", "password_hash").
+			Where("email = ?", strings.ToLower(in.Email)).Take(&u).Error
+		if err != nil || !goauth.CheckPassword(u.PasswordHash, in.Password) {
+			http.Error(w, "invalid email or password", http.StatusUnauthorized)
+			return
+		}
+		opts := append([]goauth.AuthorizeOptionsFunc{auth.WithUserID(u.ID)},
+			auth.SessionMetaFromRequest(r, "password")...)
+		tokens, sessionID, err := auth.Authorize(opts...)
+		if err != nil {
+			http.Error(w, "could not create session", http.StatusInternalServerError)
+			return
+		}
+		auth.SetSessionIDCookie(w, r, sessionID)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"session_id": sessionID, "user_id": u.ID, "tokens": tokens})
+	}
+}
+
+// logout ends the session found in the cookie and expires the cookie.
+func logout(auth *goauth.Authorization, db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if id := auth.GetSessionID(r); id != "" {
+			db.WithContext(r.Context()).Table("sessions").Where("id = ?", id).Update("is_deleted", true)
+		}
+		http.SetCookie(w, &http.Cookie{Name: goauth.DefaultCookieSessionName, Path: "/", MaxAge: -1, HttpOnly: true})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// refreshFallback answers refresh requests that lack the "cft" opt-in header.
+var refreshFallback = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, `send the "cft: 1" header to refresh a token`, http.StatusBadRequest)
+})
+
+func migrate(db *gorm.DB) error {
+	return db.Exec(`
+CREATE TABLE IF NOT EXISTS users (
+	id            TEXT PRIMARY KEY,
+	email         TEXT UNIQUE,
+	password_hash TEXT,
+	roles         TEXT DEFAULT '[]',
+	content       TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS sessions (
+	id TEXT PRIMARY KEY, user_id TEXT, type TEXT DEFAULT 'sign_in',
+	ip_address TEXT, user_agent TEXT, method TEXT DEFAULT 'credentials',
+	account TEXT, expires_at DATETIME, is_deleted NUMERIC DEFAULT 0,
+	created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+);`).Error
+}
+```
+
+## The app
+
+```go title="main.go"
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+
+	"github.com/izetmolla/goauth"
+)
+
+func main() {
+	auth, db := newAuth()
+	mux := http.NewServeMux()
+
+	// 1. goauth endpoints: /api/authorization/providers, /provider/{id}, /provider/{id}/callback
+	mux.Handle(goauth.DefaultBasePath+"/", auth.Handler())
+
+	// 2. Password sign-in, token refresh and sign-out.
+	mux.HandleFunc("POST /api/login", passwordLogin(auth, db))
+	mux.Handle("POST /api/token/refresh", auth.HandleRefreshToken(refreshFallback))
+	mux.HandleFunc("POST /api/logout", logout(auth, db))
+
+	// 3. A JWT-protected API route.
+	requireJWT := auth.UseAPIAuthorization()
+	mux.Handle("GET /api/me", requireJWT(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := auth.GetAuthDataAPI(r)
+		writeJSON(w, http.StatusOK, data)
+	})))
+
+	// 4. Admin-only routes, grouped under one sub-mux.
+	admin := http.NewServeMux()
+	admin.HandleFunc("GET /api/admin/stats", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]int{"users": 42})
+	})
+	mux.Handle("/api/admin/", auth.UseAPIAuthorization(auth.WithRoles([]string{"admin"}))(admin))
+
+	// 5. A cookie-protected HTML page (redirects to /sign-in).
+	mux.Handle("GET /dashboard", auth.UseWEBAuthorization()(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			data, _ := auth.GetAuthDataWEB(r, r.Context())
+			fmt.Fprintf(w, "<h1>Dashboard</h1><p>user %s, roles %v</p>", data.UserID, data.Roles)
+		})))
+
+	mux.HandleFunc("GET /sign-in", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<a href="/api/authorization/provider/google">Sign in with Google</a>`)
+	})
+
+	log.Println("listening on http://localhost:3000")
+	log.Fatal(http.ListenAndServe(":3000", mux))
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+```
+
+## Try it
+
+Start the app (it creates `app.db`), then add a demo user in another terminal. The hash below is `goauth.HashPassword("a-long-passphrase")`:
+
+```bash
+go run .
+```
+
+```bash
+sqlite3 app.db "INSERT INTO users (id, email, password_hash, roles) VALUES (
+  '00000000-0000-0000-0000-000000000001', 'jane@example.com',
+  '\$pbkdf2-sha256\$600000\$szJnPJf8L3F8EnWg2UwIZw\$sJsfkxgYgHKEUnDLV9gSN2eKkH9JBzV-1RINE7eTGiU',
+  '[\"admin:rw\"]');"
+```
+
+Then exercise every route:
+
+```bash
+# Sign in and keep the session cookie.
+curl -c jar.txt -X POST localhost:3000/api/login \
+  -d '{"email":"jane@example.com","password":"a-long-passphrase"}'
+
+# Call the API with the access token from the response.
+curl -H "Authorization: Bearer $ACCESS_TOKEN" localhost:3000/api/me
+
+# Refresh the access token.
+curl -X POST localhost:3000/api/token/refresh -H "cft: 1" -H "Authorization: Bearer $REFRESH_TOKEN"
+
+# Open the cookie-protected page.
+curl -b jar.txt localhost:3000/dashboard
+```
+
+Browser sign-in: open [http://localhost:3000/dashboard](http://localhost:3000/dashboard) and click **Sign in with Google** (set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` first).
+
+## Composing middlewares without a framework
+
+```go
+// chain applies middlewares so the first one listed runs first.
+func chain(h http.Handler, mws ...goauth.Middleware) http.Handler {
+	for i := len(mws) - 1; i >= 0; i-- {
+		h = mws[i](h)
+	}
+	return h
+}
+
+mux.Handle("POST /api/reports", chain(createReport,
+	requestLogger,
+	auth.UseAPIAuthorization(auth.WithRoles([]string{"finance"})),
+))
+```
+
+## Protecting the whole server with exclusions
+
+```go
+public := []string{"/api/authorization/", "/api/login", "/api/token/refresh", "/sign-in", "/healthz"}
+handler := auth.UseAPIAuthorization(auth.WithExcludedPaths(public))(mux)
+log.Fatal(http.ListenAndServe(":3000", handler))
+```
+
+Paths are matched by prefix, so list them precisely.

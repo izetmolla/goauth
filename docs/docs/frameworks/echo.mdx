@@ -1,0 +1,296 @@
+---
+title: Echo
+description: Use goauth with Echo v5 via echo.WrapHandler and echo.WrapMiddleware.
+---
+
+# Echo
+
+[Echo](https://echo.labstack.com) has built-in adapters for `net/http`: `echo.WrapHandler` and `echo.WrapMiddleware`. `WrapMiddleware` passes the context-enriched request on, so `auth.GetAuthDataAPI(c.Request())` works in native Echo handlers.
+
+## Install
+
+```bash
+go get github.com/izetmolla/goauth github.com/labstack/echo/v5 github.com/glebarez/sqlite gorm.io/gorm github.com/google/uuid
+```
+
+## Adapters at a glance
+
+| goauth value | Echo adapter |
+|---|---|
+| `auth.Handler()` | `e.Any(goauth.DefaultBasePath+"/*", echo.WrapHandler(auth.Handler()))` |
+| an `http.Handler` / `http.HandlerFunc` | `echo.WrapHandler(h)` |
+| a goauth middleware | `echo.WrapMiddleware(mw)` |
+| Reading the caller | `auth.GetAuthDataAPI(c.Request())` |
+
+## The shared setup
+
+This page uses the shared `setup.go` from the [net/http page](./net-http.mdx#the-shared-setup): database, goauth config, password sign-in and sign-out as plain `net/http` handlers.
+
+<details>
+<summary><code>setup.go</code>: database, goauth config, password sign-in and sign-out (same on every framework page)</summary>
+
+```go title="setup.go"
+package main
+
+// setup.go — shared by every framework example on these pages.
+// It opens the database, configures goauth and defines password
+// sign-in and sign-out as plain net/http handlers.
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
+	"github.com/izetmolla/goauth"
+	"github.com/izetmolla/goauth/providers/google"
+	"gorm.io/gorm"
+)
+
+func newAuth() (*goauth.Authorization, *gorm.DB) {
+	db, err := gorm.Open(sqlite.Open("app.db"), &gorm.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		log.Fatal(err)
+	}
+	auth, err := goauth.New(&goauth.Config{
+		JWTSecret:           cmp.Or(os.Getenv("JWT_SECRET"), "dev-secret-change-me"),
+		AuthURL:             "http://localhost:3000",
+		AccessTokenDuration: "15m",
+		DB:                  db,
+		Providers: []goauth.Provider{
+			google.New(os.Getenv("GOOGLE_CLIENT_ID"), os.Getenv("GOOGLE_CLIENT_SECRET")),
+		},
+		ResolveUser: func(ctx context.Context, p goauth.Profile) (*goauth.User, bool, error) {
+			email, _ := p["email"].(string)
+			return findOrCreateUser(ctx, db, email)
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return auth, db
+}
+
+// findOrCreateUser returns the user with this email, creating it on first sign-in.
+func findOrCreateUser(ctx context.Context, db *gorm.DB, email string) (*goauth.User, bool, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, false, errors.New("email is required")
+	}
+	var u goauth.User
+	err := db.WithContext(ctx).Table("users").Select("id", "roles").Where("email = ?", email).Take(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		u = goauth.User{ID: uuid.NewString(), Roles: goauth.JSONBArray{"user:r"}}
+		err = db.WithContext(ctx).Exec(`INSERT INTO users (id, email, roles) VALUES (?, ?, ?)`,
+			u.ID, email, u.Roles).Error
+		return &u, true, err
+	}
+	return &u, false, err
+}
+
+// passwordLogin signs a user in with email + password and returns the token pair.
+func passwordLogin(auth *goauth.Authorization, db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Email, Password string }
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		var u struct{ ID, PasswordHash string }
+		err := db.WithContext(r.Context()).Table("users").Select("id", "password_hash").
+			Where("email = ?", strings.ToLower(in.Email)).Take(&u).Error
+		if err != nil || !goauth.CheckPassword(u.PasswordHash, in.Password) {
+			http.Error(w, "invalid email or password", http.StatusUnauthorized)
+			return
+		}
+		opts := append([]goauth.AuthorizeOptionsFunc{auth.WithUserID(u.ID)},
+			auth.SessionMetaFromRequest(r, "password")...)
+		tokens, sessionID, err := auth.Authorize(opts...)
+		if err != nil {
+			http.Error(w, "could not create session", http.StatusInternalServerError)
+			return
+		}
+		auth.SetSessionIDCookie(w, r, sessionID)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"session_id": sessionID, "user_id": u.ID, "tokens": tokens})
+	}
+}
+
+// logout ends the session found in the cookie and expires the cookie.
+func logout(auth *goauth.Authorization, db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if id := auth.GetSessionID(r); id != "" {
+			db.WithContext(r.Context()).Table("sessions").Where("id = ?", id).Update("is_deleted", true)
+		}
+		http.SetCookie(w, &http.Cookie{Name: goauth.DefaultCookieSessionName, Path: "/", MaxAge: -1, HttpOnly: true})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// refreshFallback answers refresh requests that lack the "cft" opt-in header.
+var refreshFallback = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, `send the "cft: 1" header to refresh a token`, http.StatusBadRequest)
+})
+
+func migrate(db *gorm.DB) error {
+	return db.Exec(`
+CREATE TABLE IF NOT EXISTS users (
+	id            TEXT PRIMARY KEY,
+	email         TEXT UNIQUE,
+	password_hash TEXT,
+	roles         TEXT DEFAULT '[]',
+	content       TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS sessions (
+	id TEXT PRIMARY KEY, user_id TEXT, type TEXT DEFAULT 'sign_in',
+	ip_address TEXT, user_agent TEXT, method TEXT DEFAULT 'credentials',
+	account TEXT, expires_at DATETIME, is_deleted NUMERIC DEFAULT 0,
+	created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
+);`).Error
+}
+```
+
+</details>
+
+## The app
+
+```go title="main.go"
+package main
+
+import (
+	"log"
+	"net/http"
+
+	"github.com/izetmolla/goauth"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
+)
+
+func main() {
+	auth, db := newAuth()
+	e := echo.New()
+	e.Use(middleware.Recover())
+
+	// 1. goauth endpoints.
+	e.Any(goauth.DefaultBasePath+"/*", echo.WrapHandler(auth.Handler()))
+
+	// 2. Password sign-in, token refresh and sign-out (net/http handlers).
+	e.POST("/api/login", echo.WrapHandler(passwordLogin(auth, db)))
+	e.POST("/api/token/refresh", echo.WrapHandler(auth.HandleRefreshToken(refreshFallback)))
+	e.POST("/api/logout", echo.WrapHandler(logout(auth, db)))
+
+	// 3. echo.WrapMiddleware converts goauth middlewares. Echo passes the
+	//    context-enriched request on, so goauth helpers work on c.Request().
+	requireJWT := echo.WrapMiddleware(auth.UseAPIAuthorization())
+	requireAdmin := echo.WrapMiddleware(auth.UseAPIAuthorization(auth.WithRoles([]string{"admin"})))
+	requireSession := echo.WrapMiddleware(auth.UseWEBAuthorization())
+
+	// 4. Native Echo handlers.
+	e.GET("/api/me", func(c *echo.Context) error {
+		me, err := auth.GetAuthDataAPI(c.Request())
+		if err != nil {
+			return echo.ErrUnauthorized
+		}
+		return c.JSON(http.StatusOK, me)
+	}, requireJWT)
+
+	// 5. Groups: every route in /api/admin requires the admin role.
+	admin := e.Group("/api/admin", requireAdmin)
+	admin.GET("/stats", func(c *echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]int{"users": 42})
+	})
+
+	// 6. Read/write permissions inside a handler.
+	e.POST("/api/payroll", func(c *echo.Context) error {
+		roles, _ := auth.GetRoles(c.Request())
+		if _, _, canWrite := auth.GetRole([]string{"hr"}, roles); !canWrite {
+			return echo.NewHTTPError(http.StatusForbidden, "hr write access required")
+		}
+		return c.NoContent(http.StatusCreated)
+	}, requireJWT)
+
+	// 7. A server-rendered page protected by the session cookie.
+	e.GET("/dashboard", func(c *echo.Context) error {
+		me, err := auth.GetAuthDataWEB(c.Request(), c.Request().Context())
+		if err != nil {
+			return c.Redirect(http.StatusSeeOther, "/sign-in")
+		}
+		return c.HTML(http.StatusOK, "<h1>Hello "+me.UserID+"</h1>")
+	}, requireSession)
+
+	e.GET("/sign-in", func(c *echo.Context) error {
+		return c.HTML(http.StatusOK, `<a href="/api/authorization/provider/google">Sign in with Google</a>`)
+	})
+
+	log.Fatal(e.Start(":3000"))
+}
+```
+
+## Try it
+
+Start the app (it creates `app.db`), then add a demo user in another terminal. The hash below is `goauth.HashPassword("a-long-passphrase")`:
+
+```bash
+go run .
+```
+
+```bash
+sqlite3 app.db "INSERT INTO users (id, email, password_hash, roles) VALUES (
+  '00000000-0000-0000-0000-000000000001', 'jane@example.com',
+  '\$pbkdf2-sha256\$600000\$szJnPJf8L3F8EnWg2UwIZw\$sJsfkxgYgHKEUnDLV9gSN2eKkH9JBzV-1RINE7eTGiU',
+  '[\"admin:rw\"]');"
+```
+
+Then exercise every route:
+
+```bash
+# Sign in and keep the session cookie.
+curl -c jar.txt -X POST localhost:3000/api/login \
+  -d '{"email":"jane@example.com","password":"a-long-passphrase"}'
+
+# Call the API with the access token from the response.
+curl -H "Authorization: Bearer $ACCESS_TOKEN" localhost:3000/api/me
+
+# Refresh the access token.
+curl -X POST localhost:3000/api/token/refresh -H "cft: 1" -H "Authorization: Bearer $REFRESH_TOKEN"
+
+# Open the cookie-protected page.
+curl -b jar.txt localhost:3000/dashboard
+```
+
+Browser sign-in: open [http://localhost:3000/dashboard](http://localhost:3000/dashboard) and click **Sign in with Google** (set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` first).
+
+## Storing the caller on the Echo context
+
+To avoid calling goauth in every handler, add a small middleware after the auth middleware:
+
+```go
+func currentUser(auth *goauth.Authorization) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			me, err := auth.GetAuthDataAPI(c.Request())
+			if err != nil {
+				return echo.ErrUnauthorized
+			}
+			c.Set("me", me)
+			return next(c)
+		}
+	}
+}
+
+api := e.Group("/api", requireJWT, currentUser(auth))
+api.GET("/orders", func(c *echo.Context) error {
+	me := c.Get("me").(goauth.AuthData)
+	return c.JSON(http.StatusOK, listOrders(me.UserID))
+})
+```

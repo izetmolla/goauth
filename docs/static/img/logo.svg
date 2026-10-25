@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72" role="img" aria-label="goauth">
+  <defs>
+    <linearGradient id="ga-top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2ee6b6"/>
+      <stop offset="1" stop-color="#1fa2f0"/>
+    </linearGradient>
+    <linearGradient id="ga-bottom" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#c13cf0"/>
+      <stop offset="1" stop-color="#6a11cb"/>
+    </linearGradient>
+    <radialGradient id="ga-badge" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6f4fb"/>
+    </radialGradient>
+    <clipPath id="ga-shield">
+      <path d="M32 2 60 12v22c0 18-12.5 30-28 36C16.5 64 4 52 4 34V12Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Shield: teal/blue upper half, purple lower half, split diagonally. -->
+  <g clip-path="url(#ga-shield)">
+    <rect width="64" height="72" fill="url(#ga-bottom)"/>
+    <path d="M0 0h64v16L0 52Z" fill="url(#ga-top)"/>
+  </g>
+
+  <!-- Badge with Go-style lettering and speed lines. -->
+  <circle cx="32" cy="37" r="18" fill="url(#ga-badge)"/>
+  <g fill="none" stroke="#00add8" stroke-linecap="round" stroke-linejoin="round" transform="translate(32 37) scale(0.86) translate(-32 -37) translate(5.8 0) skewX(-10)">
+    <path d="M16 34h4.5M15 37h5.5M16 40h4.5" stroke-width="1.8"/>
+    <path d="M32.6 33.4A5.5 5.5 0 1 0 33.5 37.5H29.6" stroke-width="3.2"/>
+    <circle cx="40.6" cy="37" r="5.5" stroke-width="3.2"/>
+  </g>
+</svg>
