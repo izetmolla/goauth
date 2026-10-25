@@ -102,14 +102,28 @@ func (c *cookieJar) def(override *CookieOption, base CookieOption) CookieOption 
 	return out
 }
 
-func (c *cookieJar) callbackURL() CookieOption {
-	return c.def(c.opts.CallbackURL, CookieOption{
-		Name:     c.prefix(false) + "authjs.callback-url",
+// flowCookieMaxAge bounds the transient cookies of an OAuth round-trip.
+const flowCookieMaxAge = 15 * time.Minute
+
+// base is the secure definition shared by every goauth cookie.
+func (c *cookieJar) base(name string, maxAge time.Duration) CookieOption {
+	return CookieOption{
+		Name:     name,
 		HTTPOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
 		Secure:   c.secure,
-	})
+		MaxAge:   maxAge,
+	}
+}
+
+// flowCookie is a short-lived, scheme-prefixed cookie for one OAuth round-trip.
+func (c *cookieJar) flowCookie(name string) CookieOption {
+	return c.base(c.prefix(false)+name, flowCookieMaxAge)
+}
+
+func (c *cookieJar) callbackURL() CookieOption {
+	return c.def(c.opts.CallbackURL, c.base(c.prefix(false)+"authjs.callback-url", 0))
 }
 
 func (c *cookieJar) csrfToken() CookieOption {
@@ -117,84 +131,25 @@ func (c *cookieJar) csrfToken() CookieOption {
 	// the exact host. That prefix forbids a Domain attribute, so when a Domain is
 	// configured (for cross-subdomain sharing) we fall back to the __Secure-
 	// prefix, which permits Domain.
-	host := true
-	if c.opts.CSRFToken != nil && c.opts.CSRFToken.Domain != "" {
-		host = false
-	}
-	return c.def(c.opts.CSRFToken, CookieOption{
-		Name:     c.prefix(host) + "authjs.csrf-token",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-	})
+	host := c.opts.CSRFToken == nil || c.opts.CSRFToken.Domain == ""
+	return c.def(c.opts.CSRFToken, c.base(c.prefix(host)+"authjs.csrf-token", 0))
 }
 
 func (c *cookieJar) pkceCodeVerifier() CookieOption {
-	return c.def(c.opts.PKCECodeVerifier, CookieOption{
-		Name:     c.prefix(false) + "authjs.pkce.code_verifier",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-		MaxAge:   15 * time.Minute,
-	})
+	return c.def(c.opts.PKCECodeVerifier, c.flowCookie("authjs.pkce.code_verifier"))
 }
 
 func (c *cookieJar) state() CookieOption {
-	return c.def(c.opts.State, CookieOption{
-		Name:     c.prefix(false) + "authjs.state",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-		MaxAge:   15 * time.Minute,
-	})
-}
-
-func (c *cookieJar) flow() CookieOption {
-	return CookieOption{
-		Name:     c.prefix(false) + "authjs.flow",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-		MaxAge:   15 * time.Minute,
-	}
-}
-
-func (c *cookieJar) flowIntent() CookieOption {
-	return CookieOption{
-		Name:     c.prefix(false) + "authjs.flow-intent",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-		MaxAge:   15 * time.Minute,
-	}
-}
-
-func (c *cookieJar) connectResource() CookieOption {
-	return CookieOption{
-		Name:     c.prefix(false) + "authjs.connect-resource",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-		MaxAge:   15 * time.Minute,
-	}
+	return c.def(c.opts.State, c.flowCookie("authjs.state"))
 }
 
 func (c *cookieJar) nonce() CookieOption {
-	return c.def(c.opts.Nonce, CookieOption{
-		Name:     c.prefix(false) + "authjs.nonce",
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   c.secure,
-		MaxAge:   15 * time.Minute,
-	})
+	return c.def(c.opts.Nonce, c.flowCookie("authjs.nonce"))
 }
+
+func (c *cookieJar) flow() CookieOption            { return c.flowCookie("authjs.flow") }
+func (c *cookieJar) flowIntent() CookieOption      { return c.flowCookie("authjs.flow-intent") }
+func (c *cookieJar) connectResource() CookieOption { return c.flowCookie("authjs.connect-resource") }
 
 // set writes a cookie with the given value. A non-positive maxAge other than the
 // option default leaves it as a session cookie.

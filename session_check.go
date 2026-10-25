@@ -22,52 +22,13 @@ func (a *Authorization) CheckSession(w http.ResponseWriter, r *http.Request) (*C
 	if a == nil {
 		return nil, ErrNotInitialized
 	}
-	refreshToken, err := a.GetTokenFromHeader(r.Header.Get("Authorization"))
-	if err != nil {
-		refreshToken = bodyRefreshToken(r)
-	}
-	if refreshToken == "" {
-		return nil, ErrMissingRefreshToken
-	}
-
-	claims, err := a.ExtractToken(refreshToken)
-	if err != nil {
-		return nil, ErrInvalidRefreshToken
-	}
-	if claims.SessionID == "" {
-		return nil, ErrInvalidRefreshToken
-	}
-
-	ctx := r.Context()
-
-	if err := a.ensureSessionActive(ctx, claims.SessionID); err != nil {
-		return nil, err
-	}
-
-	session, err := a.GetSession(ctx, claims.SessionID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrSessionNotFound
-		}
-		return nil, err
-	}
-
-	if claims.UserID != "" && claims.UserID != session.UserID {
-		return nil, ErrInvalidRefreshToken
-	}
-
-	accessToken, err := a.RefreshAccessToken(claims, session)
+	refreshToken, accessToken, session, err := a.refreshFromRequest(r)
 	if err != nil {
 		return nil, err
 	}
-
 	a.SetSessionIDCookie(w, r, session.ID)
-
 	return &CheckSessionResult{
-		Tokens: Tokens{
-			AccessToken:  accessToken,
-			RefreshToken: refreshToken,
-		},
+		Tokens:    Tokens{AccessToken: accessToken, RefreshToken: refreshToken},
 		SessionID: session.ID,
 		UserID:    session.UserID,
 	}, nil

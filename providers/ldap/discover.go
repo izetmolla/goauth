@@ -20,7 +20,7 @@ func discoverBaseDN(conn *ldapv3.Conn) (string, error) {
 	)
 	res, err := conn.Search(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: RootDSE: %v", ErrConnection, err)
+		return "", fmt.Errorf("%w: RootDSE: %w", ErrConnection, err)
 	}
 	if len(res.Entries) != 1 {
 		return "", fmt.Errorf("%w: unexpected RootDSE response", ErrConnection)

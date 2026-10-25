@@ -118,7 +118,7 @@ func userFromEntry(entry *ldapv3.Entry, cfg Config) *User {
 	if roleAttr := strings.TrimSpace(cfg.RoleAttribute); roleAttr != "" {
 		raw := entry.GetAttributeValues(roleAttr)
 		if cfg.roleFromDN() {
-			u.Roles = cnFromDNs(raw)
+			u.Roles = cnFromDNS(raw)
 		} else {
 			u.Roles = append([]string(nil), raw...)
 		}
@@ -141,7 +141,7 @@ func copyEntryAttributes(entry *ldapv3.Entry) map[string][]string {
 
 // cnFromDNs extracts the CN value from each DN, e.g.
 // "CN=Admins,OU=Groups,DC=example,DC=com" -> "Admins".
-func cnFromDNs(dns []string) []string {
+func cnFromDNS(dns []string) []string {
 	out := make([]string, 0, len(dns))
 	for _, dn := range dns {
 		if cn := cnFromDN(dn); cn != "" {

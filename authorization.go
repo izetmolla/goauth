@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -63,96 +64,54 @@ type Authorization struct {
 	onProviderConnect func(ctx context.Context, resourceID string, account *Account, user *User, providerID string) error
 }
 
-func defaultConfig() *Config {
-	return &Config{
-		JWTSecret:            "",
-		DB:                   nil,
-		Redis:                nil,
-		AuthURL:              "localhost",
-		AccessTokenDuration:  DefaultAccessTokenDuration,
-		RefreshTokenDuration: DefaultRefreshTokenDuration,
-		RedisPrefix:          DefaultRedisPrefix,
-		UserTableName:        DefaultUserTableName,
-		SessionTableName:     DefaultSessionTableName,
-		RedisTTL:             DefaultRedisTTL,
-		SigningMethod:        DefaultSigningMethodHMAC,
-		SignInRedirectURL:    DefaultSignInRedirectURL,
-		CookieSessionName:    DefaultCookieSessionName,
-		Providers:            []Provider{},
-		Cookies:              &CookieOptions{},
-		ResolveUser:          nil,
-	}
-}
+// New builds an Authorization from config. Optional ConfigFunc values are
+// applied on top of config, and any field still left empty falls back to the
+// package defaults (DefaultAccessTokenDuration, DefaultRedisPrefix, ...).
 func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if config == nil {
 		return nil, errors.New("config is required")
 	}
-	cfg := defaultConfig()
+	cfg := *config
 	for _, opt := range opts {
 		if opt != nil {
-			opt(cfg)
+			opt(&cfg)
 		}
 	}
-	cookies := CookieOptions{}
+	if cfg.JWTSecret == "" {
+		return nil, errors.New("JWTSecret is required")
+	}
+	if cfg.DB == nil {
+		return nil, errors.New("db is required")
+	}
+
+	var cookies CookieOptions
 	if cfg.Cookies != nil {
 		cookies = *cfg.Cookies
 	}
-	auth := &Authorization{
+	return &Authorization{
 		JWTSecret:            cfg.JWTSecret,
-		db:                   config.DB,
-		redis:                config.Redis,
-		redisPrefix:          cfg.RedisPrefix,
-		userTableName:        cfg.UserTableName,
-		sessionTableName:     cfg.SessionTableName,
-		redisTTL:             cfg.RedisTTL,
-		accessTokenDuration:  cfg.AccessTokenDuration,
-		refreshTokenDuration: cfg.RefreshTokenDuration,
-		signInRedirectURL:    cfg.SignInRedirectURL,
-		cookieSessionName:    cfg.CookieSessionName,
-		providers:            config.Providers,
+		AuthURL:              cfg.AuthURL,
+		signingMethod:        cmp.Or(cfg.SigningMethod, DefaultSigningMethodHMAC),
+		accessTokenDuration:  cmp.Or(cfg.AccessTokenDuration, DefaultAccessTokenDuration),
+		refreshTokenDuration: cmp.Or(cfg.RefreshTokenDuration, DefaultRefreshTokenDuration),
+		signInRedirectURL:    cmp.Or(cfg.SignInRedirectURL, DefaultSignInRedirectURL),
+		db:                   cfg.DB,
+		redis:                cfg.Redis,
+		redisPrefix:          cmp.Or(cfg.RedisPrefix, DefaultRedisPrefix),
+		redisTTL:             cmp.Or(cfg.RedisTTL, DefaultRedisTTL),
+		userTableName:        cmp.Or(cfg.UserTableName, DefaultUserTableName),
+		sessionTableName:     cmp.Or(cfg.SessionTableName, DefaultSessionTableName),
+		cookieSessionName:    cmp.Or(cfg.CookieSessionName, DefaultCookieSessionName),
+		providers:            cfg.Providers,
 		cookies:              cookies,
-		AuthURL:              config.AuthURL,
-		signingMethod:        cfg.SigningMethod,
-	}
-	if config.SigningMethod != "" {
-		auth.signingMethod = config.SigningMethod
-	}
-	if cfg.JWTSecret == "" {
-		if config.JWTSecret == "" {
-			return nil, errors.New("JWTSecret is required")
-		}
-		auth.JWTSecret = config.JWTSecret
-	}
-
-	if auth.db == nil {
-		if config.DB == nil {
-			return nil, errors.New("db is required")
-		}
-		auth.db = config.DB
-	}
-	if auth.redis == nil {
-		auth.redis = config.Redis
-	}
-	if config.Cookies != nil {
-		auth.cookies = *config.Cookies
-	}
-	if config.ResolveUser != nil {
-		auth.resolveUser = config.ResolveUser
-	} else if cfg.ResolveUser != nil {
-		auth.resolveUser = cfg.ResolveUser
-	}
-	if config.OnProviderConnect != nil {
-		auth.onProviderConnect = config.OnProviderConnect
-	} else if cfg.OnProviderConnect != nil {
-		auth.onProviderConnect = cfg.OnProviderConnect
-	}
-
-	return auth, nil
+		resolveUser:          cfg.ResolveUser,
+		onProviderConnect:    cfg.OnProviderConnect,
+	}, nil
 }
 
-func (a *Authorization) WithJWTSecret(JWTSecret string) *Authorization {
-	if JWTSecret != "" {
-		a.JWTSecret = JWTSecret
+func (a *Authorization) WithJWTSecret(secret string) *Authorization {
+	if secret != "" {
+		a.JWTSecret = secret
 	}
 	return a
 }

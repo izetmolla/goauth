@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"io"
 	"slices"
 )
 
@@ -12,7 +11,7 @@ import (
 // of entropy.
 func randomString(n int) string {
 	b := make([]byte, n)
-	_, _ = io.ReadFull(rand.Reader, b)
+	_, _ = rand.Read(b) // never returns an error since Go 1.24
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 

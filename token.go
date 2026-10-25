@@ -10,11 +10,19 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// Values of the "token_type" claim. They keep a long-lived refresh token from
+// being accepted where an access token is expected, and vice versa.
+const (
+	tokenTypeAccess  = "access"
+	tokenTypeRefresh = "refresh"
+)
+
 // Claims are the JWT claims embedded in access tokens.
 type Claims struct {
-	UserID  string     `json:"user_id"`
-	Content JSONBAny   `json:"content"`
-	Roles   JSONBArray `json:"roles"`
+	UserID    string     `json:"user_id"`
+	TokenType string     `json:"token_type,omitempty"`
+	Content   JSONBAny   `json:"content"`
+	Roles     JSONBArray `json:"roles"`
 	jwt.RegisteredClaims
 }
 
@@ -22,6 +30,7 @@ type Claims struct {
 type RefreshTokenClaims struct {
 	SessionID           string     `json:"session_id"`
 	UserID              string     `json:"user_id"`
+	TokenType           string     `json:"token_type,omitempty"`
 	AccessTokenLifetime string     `json:"tokenlife,omitempty"`
 	SigningMethodHMAC   string     `json:"signing_method,omitempty"`
 	Content             JSONBAny   `json:"content,omitempty"`
@@ -44,14 +53,21 @@ func (a *Authorization) GetTokenFromHeader(authHeader string) (string, error) {
 	if authHeader == "" {
 		return "", errors.New("authorization header is required")
 	}
-	switch {
-	case len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer "):
-		return authHeader[7:], nil
-	case len(authHeader) > 6 && strings.EqualFold(authHeader[:6], "Token "):
-		return authHeader[6:], nil
-	default:
-		return authHeader, nil
+	if token, ok := cutScheme(authHeader, "Bearer "); ok {
+		return token, nil
 	}
+	if token, ok := cutScheme(authHeader, "Token "); ok {
+		return token, nil
+	}
+	return authHeader, nil
+}
+
+// cutScheme strips a case-insensitive auth scheme prefix such as "Bearer ".
+func cutScheme(header, scheme string) (string, bool) {
+	if len(header) > len(scheme) && strings.EqualFold(header[:len(scheme)], scheme) {
+		return header[len(scheme):], true
+	}
+	return "", false
 }
 
 // ExtractToken parses and validates a refresh token, returning its claims.
@@ -63,6 +79,11 @@ func (a *Authorization) ExtractToken(tokenString string) (*RefreshTokenClaims, e
 	claims, ok := token.Claims.(*RefreshTokenClaims)
 	if !ok || !token.Valid {
 		return nil, errors.New("invalid token")
+	}
+	// Access tokens carry no session_id; tokens issued before token_type
+	// existed are told apart by that.
+	if claims.TokenType == tokenTypeAccess || claims.SessionID == "" {
+		return nil, errors.New("not a refresh token")
 	}
 	return claims, nil
 }
@@ -106,20 +127,19 @@ func (a *Authorization) RefreshAccessToken(
 	}
 
 	claims := &Claims{
-		UserID:  refreshTokenClaims.UserID,
-		Content: options.content,
-		Roles:   roles,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
+		UserID:    refreshTokenClaims.UserID,
+		TokenType: tokenTypeAccess,
+		Content:   options.content,
+		Roles:     roles,
+		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
+		IssuedAt:  jwt.NewNumericDate(now),
 	}
 	return jwt.NewWithClaims(resolveSigningMethod(a.signingMethod), claims).SignedString([]byte(a.JWTSecret))
 }
 
 // --- Token issuance -------------------------------------------------------
 
-// signTokenPair signs an access and a refresh token in one shot.
+// SignTokenPair signs an access and a refresh token in one shot.
 // Time.Now() is called once and reused so the lifetimes line up exactly.
 func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (string, string, error) {
 	if a == nil {
@@ -139,13 +159,12 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 		return "", "", err
 	}
 	accessClaims := &Claims{
-		UserID:  o.userID,
-		Content: o.content,
-		Roles:   o.roles,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
+		UserID:    o.userID,
+		TokenType: tokenTypeAccess,
+		Content:   o.content,
+		Roles:     o.roles,
+		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
+		IssuedAt:  jwt.NewNumericDate(now),
 	}
 	accessToken, err := jwt.NewWithClaims(resolveSigningMethod(a.signingMethod), accessClaims).SignedString([]byte(a.JWTSecret))
 	if err != nil {
@@ -158,16 +177,15 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 	refreshClaims := &RefreshTokenClaims{
 		SessionID: sessionID,
 		UserID:    o.userID,
+		TokenType: tokenTypeRefresh,
 		// "tokenlife" describes the access-token lifetime, not the refresh
 		// token's own lifetime.
 		AccessTokenLifetime: accessTokenDuration.String(),
 		SigningMethodHMAC:   a.signingMethod,
 		Content:             o.content,
 		Roles:               o.roles,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(refreshTokenDuration)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
+		ExpiresAt:           jwt.NewNumericDate(now.Add(refreshTokenDuration)),
+		IssuedAt:            jwt.NewNumericDate(now),
 	}
 	refreshToken, err := jwt.NewWithClaims(resolveSigningMethod(a.signingMethod), refreshClaims).SignedString([]byte(a.JWTSecret))
 	if err != nil {
@@ -177,17 +195,9 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 	return accessToken, refreshToken, nil
 }
 
-// other for Social Login
 // wantsTokens reports whether the response should be tokens (JSON) rather than a
 // session cookie + redirect.
 func (a *Authorization) wantsTokens(r *http.Request) bool {
-	//Need to implement this
-	// if !a.cfg.Tokens.Enabled {
-	// 	return false
-	// }
-	// if a.cfg.Tokens.AlwaysReturn {
-	// 	return true
-	// }
 	return strings.EqualFold(r.Header.Get("X-Auth-Flow"), "token") || r.URL.Query().Get("flow") == "token"
 }
 
@@ -196,6 +206,5 @@ func (a *Authorization) checkCSRF(r *http.Request, secure bool) bool {
 	jar := a.jar(secure)
 	cookieVal := readCookie(r, jar.csrfToken().Name)
 	body := r.FormValue("csrfToken")
-	_, ok := verifyCSRF(cookieVal, body, a.JWTSecret)
-	return ok
+	return verifyCSRF(cookieVal, body, a.JWTSecret)
 }

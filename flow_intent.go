@@ -1,10 +1,7 @@
 package goauth
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
@@ -15,23 +12,16 @@ const (
 	FlowIntentConnect = "connect"
 )
 
-func flowIntentHash(intent, secret string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(intent + secret))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
 func signedFlowIntentValue(intent, secret string) string {
-	return intent + "|" + flowIntentHash(intent, secret)
+	return intent + "|" + signValue(intent, secret)
 }
 
 func verifyFlowIntentCookie(cookieValue, intent, secret string) bool {
-	parts := strings.SplitN(cookieValue, "|", 2)
-	if len(parts) != 2 || parts[0] != intent {
+	got, sig, ok := strings.Cut(cookieValue, "|")
+	if !ok || got != intent {
 		return false
 	}
-	expected := flowIntentHash(intent, secret)
-	return subtle.ConstantTimeCompare([]byte(parts[1]), []byte(expected)) == 1
+	return subtle.ConstantTimeCompare([]byte(sig), []byte(signValue(intent, secret))) == 1
 }
 
 // SetFlowIntentCookie stores a signed, short-lived intent marker for the OAuth round-trip.

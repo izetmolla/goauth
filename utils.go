@@ -1,11 +1,13 @@
 package goauth
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,43 +22,34 @@ var httpClient = &http.Client{Timeout: 15 * time.Second}
 // `excluded`. Prefix matching is intentional so callers can opt entire
 // route trees out of authentication (e.g. "/api/public").
 func IsExcludedPath(excluded []string, path string) bool {
-	for _, prefix := range excluded {
-		if prefix == "" {
-			continue
-		}
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(excluded, func(prefix string) bool {
+		return prefix != "" && strings.HasPrefix(path, prefix)
+	})
 }
 
 // validateSessionData validates session data for required fields.
 func validateSessionData(session *SessionData) error {
 	if session == nil {
-		return fmt.Errorf("session data cannot be nil")
+		return errors.New("session data cannot be nil")
 	}
 	if session.ID == "" {
-		return fmt.Errorf("session ID cannot be empty")
+		return errors.New("session ID cannot be empty")
 	}
 	if session.UserID == "" {
-		return fmt.Errorf("user ID cannot be empty")
+		return errors.New("user ID cannot be empty")
 	}
 	return nil
 }
 
 // buildRedisKey creates a Redis key with the configured prefix.
 func buildRedisKey(prefix, sessionID string) string {
-	if prefix == "" {
-		prefix = "ft_auth"
-	}
-	return fmt.Sprintf("%s:%s", prefix, sessionID)
+	return cmp.Or(prefix, "ft_auth") + ":" + sessionID
 }
 
 // serializeSessionData serializes session data to JSON for Redis storage.
 func serializeSessionData(session *SessionData) ([]byte, error) {
 	if session == nil {
-		return nil, fmt.Errorf("session data cannot be nil")
+		return nil, errors.New("session data cannot be nil")
 	}
 
 	data, err := json.Marshal(session)
@@ -70,7 +63,7 @@ func serializeSessionData(session *SessionData) ([]byte, error) {
 // deserializeSessionData deserializes JSON data from Redis into session data.
 func deserializeSessionData(data []byte) (*SessionData, error) {
 	if len(data) == 0 {
-		return nil, fmt.Errorf("session data is empty")
+		return nil, errors.New("session data is empty")
 	}
 
 	var response SessionData
@@ -90,9 +83,7 @@ func resolveSigningMethod(method string) *jwt.SigningMethodHMAC {
 		return jwt.SigningMethodHS384
 	case "hs512":
 		return jwt.SigningMethodHS512
-	case "hs256", "":
-		return jwt.SigningMethodHS256
-	default:
+	default: // "hs256", "" and anything unrecognized
 		return jwt.SigningMethodHS256
 	}
 }
@@ -151,12 +142,8 @@ func ParseCustomDuration(input, defaultInput string) (time.Duration, error) {
 
 // stringClaim safely extracts a string value from jwt.MapClaims.
 func stringClaim(claims jwt.MapClaims, key string) string {
-	if v, ok := claims[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
+	s, _ := claims[key].(string)
+	return s
 }
 
 func FormatUser(user *User) any {

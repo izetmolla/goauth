@@ -3,7 +3,6 @@ package goauth
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"net/http"
 )
@@ -13,30 +12,18 @@ import (
 // frontend zustand persist format) and either notifies the opener (popup
 // flow) or redirects to the saved redirect URL (redirect flow).
 func (a *Authorization) renderCallbackPage(w http.ResponseWriter, data any) {
-	dataMap := map[string]any{
-		"title": "Signing in…",
-	}
+	// json.Marshal escapes <, > and &, so the payload cannot close the
+	// surrounding <script> element.
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		// a.writeError(w, http.StatusInternalServerError, newError(KindJWTSessionError, "encode token response", err))
-		writeJSON(w, http.StatusInternalServerError, Map{
-			"message": "Failed to encode token response",
-			"code":    "ERROR",
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to encode token response")
 		return
 	}
-	// Parse the template
-	tmpl, err := template.New("index.html").Parse(tokenCallbackHTML)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	dataMap["globalOptions"] = template.HTML(fmt.Sprintf(`<script id="__GLOBAL_DATA__" data-app="%s" type="application/json">%s</script>`, "", string(jsonData)))
-
-	dataMap["content"] = template.HTML(string(jsonData))
-	// // Execute template
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, dataMap); err != nil {
+	if err := callbackPageTemplate.Execute(&buf, map[string]any{
+		"title":         "Signing in…",
+		"globalOptions": template.HTML(`<script id="__GLOBAL_DATA__" type="application/json">` + string(jsonData) + `</script>`),
+	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -45,6 +32,13 @@ func (a *Authorization) renderCallbackPage(w http.ResponseWriter, data any) {
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(buf.Bytes())
 }
+
+// renderCallbackError renders the callback page in its error state.
+func (a *Authorization) renderCallbackError(w http.ResponseWriter, message string) {
+	a.renderCallbackPage(w, Map{"message": message, "code": codeError})
+}
+
+var callbackPageTemplate = template.Must(template.New("callback").Parse(tokenCallbackHTML))
 
 const tokenCallbackHTML = `<!doctype html>
 <html lang="en">
@@ -56,7 +50,7 @@ const tokenCallbackHTML = `<!doctype html>
   .panel{display:flex;flex-direction:column;align-items:center;gap:12px;max-width:28rem;padding:0 16px;text-align:center}
   .status{display:flex;align-items:center;color:#52525b}
   .status.is-hidden{display:none}
-  .spinner{width:24px;height:24px;border:3px solid #8883;border-top-color:#666;border-radius:50%%;animation:spin .6s linear infinite;margin-right:12px}
+  .spinner{width:24px;height:24px;border:3px solid #8883;border-top-color:#666;border-radius:50%;animation:spin .6s linear infinite;margin-right:12px}
   @keyframes spin{to{transform:rotate(360deg)}}
   #message{margin:0;padding:12px 16px;border-radius:10px;font-size:15px;line-height:1.5;font-weight:500}
   #message.is-error{color:#991b1b;background:#fef2f2;border:1px solid #fecaca}

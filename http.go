@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"net"
 	"net/http"
 	"strings"
 )
@@ -47,20 +48,25 @@ func isSecureRequest(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
+// requestScheme returns "https" or "http" for the request (see isSecureRequest).
+func requestScheme(r *http.Request) string {
+	if isSecureRequest(r) {
+		return "https"
+	}
+	return "http"
+}
+
 // clientIP returns the caller address, preferring proxy-forwarded headers.
 func clientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		if ip, _, ok := strings.Cut(fwd, ","); ok {
-			return strings.TrimSpace(ip)
-		}
-		return strings.TrimSpace(fwd)
+		ip, _, _ := strings.Cut(fwd, ",")
+		return strings.TrimSpace(ip)
 	}
 	if ip := r.Header.Get("X-Real-Ip"); ip != "" {
 		return ip
 	}
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i > 0 {
-		host = host[:i]
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
-	return strings.Trim(host, "[]")
+	return r.RemoteAddr
 }

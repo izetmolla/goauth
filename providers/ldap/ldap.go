@@ -4,8 +4,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	ldapv3 "github.com/go-ldap/ldap/v3"
@@ -67,9 +70,12 @@ type Config struct {
 }
 
 // Client authenticates users against an LDAP directory.
+// A Client is safe for concurrent use.
 type Client struct {
-	cfg    Config
-	baseDN string // cached after RootDSE discovery
+	cfg Config
+
+	mu     sync.Mutex
+	baseDN string // cached after RootDSE discovery; guarded by mu
 }
 
 // New validates cfg and returns a ready-to-use Client.
@@ -138,12 +144,7 @@ func (c *Client) Login(username, password string) (*User, error) {
 		return nil, err
 	}
 	if err := conn.Bind(entry.DN, password); err != nil {
-		var ldapErr *ldapv3.Error
-		if errors.As(err, &ldapErr) && (ldapErr.ResultCode == ldapv3.LDAPResultInvalidCredentials ||
-			ldapErr.ResultCode == ldapv3.LDAPResultInvalidDNSyntax) {
-			return nil, ErrInvalidCredentials
-		}
-		return nil, fmt.Errorf("%w: user bind: %v", ErrInvalidCredentials, err)
+		return nil, userBindError(err)
 	}
 
 	return userFromEntry(entry, c.cfg), nil
@@ -165,12 +166,7 @@ func (c *Client) UsernameWithDomain(username string) string {
 func (c *Client) loginDirect(conn *ldapv3.Conn, username, password string) (*User, error) {
 	bindIdentity := c.userBindIdentity(username)
 	if err := conn.Bind(bindIdentity, password); err != nil {
-		var ldapErr *ldapv3.Error
-		if errors.As(err, &ldapErr) && (ldapErr.ResultCode == ldapv3.LDAPResultInvalidCredentials ||
-			ldapErr.ResultCode == ldapv3.LDAPResultInvalidDNSyntax) {
-			return nil, ErrInvalidCredentials
-		}
-		return nil, fmt.Errorf("%w: user bind: %v", ErrInvalidCredentials, err)
+		return nil, userBindError(err)
 	}
 
 	entry, err := c.searchUser(conn, bindIdentity)
@@ -212,6 +208,8 @@ func (c *Client) resolveBaseDN(conn *ldapv3.Conn) (string, error) {
 	if dn := strings.TrimSpace(c.cfg.BaseDN); dn != "" {
 		return dn, nil
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.baseDN != "" {
 		return c.baseDN, nil
 	}
@@ -268,7 +266,7 @@ func (c *Client) searchUser(conn *ldapv3.Conn, searchTerm string) (*ldapv3.Entry
 
 	result, err := conn.Search(search)
 	if err != nil {
-		return nil, fmt.Errorf("%w: search: %v", ErrConnection, err)
+		return nil, fmt.Errorf("%w: search: %w", ErrConnection, err)
 	}
 	switch len(result.Entries) {
 	case 0:
@@ -280,16 +278,24 @@ func (c *Client) searchUser(conn *ldapv3.Conn, searchTerm string) (*ldapv3.Entry
 	}
 }
 
+// userBindError maps a failed user bind to ErrInvalidCredentials.
+func userBindError(err error) error {
+	if ldapErr, ok := errors.AsType[*ldapv3.Error](err); ok &&
+		(ldapErr.ResultCode == ldapv3.LDAPResultInvalidCredentials || ldapErr.ResultCode == ldapv3.LDAPResultInvalidDNSyntax) {
+		return ErrInvalidCredentials
+	}
+	return fmt.Errorf("%w: user bind: %w", ErrInvalidCredentials, err)
+}
+
 func serviceBindError(err error) error {
-	var ldapErr *ldapv3.Error
-	if errors.As(err, &ldapErr) && ldapErr.ResultCode == ldapv3.LDAPResultInvalidCredentials {
+	if ldapErr, ok := errors.AsType[*ldapv3.Error](err); ok && ldapErr.ResultCode == ldapv3.LDAPResultInvalidCredentials {
 		msg := "check LDAP_BIND_DN and LDAP_BIND_PASSWORD"
 		if strings.Contains(strings.ToLower(err.Error()), "52e") {
 			msg = "Active Directory rejected the bind (52e: wrong bind identity or password)"
 		}
-		return fmt.Errorf("%w: service bind: %s: %v", ErrConnection, msg, err)
+		return fmt.Errorf("%w: service bind: %s: %w", ErrConnection, msg, err)
 	}
-	return fmt.Errorf("%w: service bind: %v", ErrConnection, err)
+	return fmt.Errorf("%w: service bind: %w", ErrConnection, err)
 }
 
 func (c *Client) dial() (*ldapv3.Conn, error) {
@@ -300,7 +306,7 @@ func (c *Client) dial() (*ldapv3.Conn, error) {
 
 	conn, err := ldapv3.DialURL(c.cfg.URL, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrConnection, err)
+		return nil, fmt.Errorf("%w: %w", ErrConnection, err)
 	}
 	conn.SetTimeout(c.cfg.Timeout)
 	return conn, nil
@@ -347,11 +353,7 @@ func (c *Client) searchAttributes() []string {
 		add(attr)
 	}
 
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func (cfg Config) roleFromDN() bool {

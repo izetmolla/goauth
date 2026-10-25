@@ -48,9 +48,9 @@ type Session struct {
 
 // BeforeCreate sets a UUID for the user before creation.
 // This ensures consistent ID generation across different database systems.
-func (u *Session) BeforeCreate(tx *gorm.DB) error {
-	if u.ID == "" {
-		u.ID = uuid.New().String()
+func (s *Session) BeforeCreate(*gorm.DB) error {
+	if s.ID == "" {
+		s.ID = uuid.New().String()
 	}
 	return nil
 }
@@ -58,28 +58,35 @@ func (u *Session) BeforeCreate(tx *gorm.DB) error {
 // --- Session & user lookup ------------------------------------------------
 
 // GetSession loads a session (and its user) by id, using the Redis cache
-// when available.
+// when available. A missing id, session or user yields ErrSessionNotFound.
 func (a *Authorization) GetSession(ctx context.Context, sessionID string) (*Session, error) {
-	return a.GetSessionFromDB(ctx, sessionID)
+	if sessionID == "" {
+		return nil, ErrSessionNotFound
+	}
+	session, err := a.GetSessionFromDB(ctx, sessionID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrSessionNotFound
+	}
+	return session, err
 }
 
-func (d *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) (*Session, error) {
-	if d == nil || d.db == nil {
+func (a *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) (*Session, error) {
+	if a == nil || a.db == nil {
 		return nil, errors.New("db manager is not initialized")
 	}
 	if sessionID == "" {
 		return nil, errors.New("session ID cannot be empty")
 	}
-	if d.redis != nil {
-		session, err := d.GetSessionFromRedis(ctx, sessionID)
+	if a.redis != nil {
+		session, err := a.GetSessionFromRedis(ctx, sessionID)
 		if err == nil {
-			if activeErr := d.ensureSessionActive(ctx, sessionID); activeErr != nil {
+			if activeErr := a.ensureSessionActive(ctx, sessionID); activeErr != nil {
 				return nil, activeErr
 			}
 			roles := session.Roles
-			if fresh, err := d.getUserRolesFromDB(ctx, session.UserID); err == nil && len(fresh) > 0 {
+			if fresh, err := a.getUserRolesFromDB(ctx, session.UserID); err == nil && len(fresh) > 0 {
 				roles = fresh
-				_ = d.SetSessionToRedis(ctx, &SessionData{
+				_ = a.SetSessionToRedis(ctx, &SessionData{
 					ID:     session.ID,
 					UserID: session.UserID,
 					Roles:  roles,
@@ -96,12 +103,12 @@ func (d *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) 
 		}
 	}
 	var session Session
-	if err := d.db.
+	if err := a.db.
 		WithContext(ctx).
-		Table(d.sessionsTable()).
+		Table(a.sessionsTable()).
 		Where("id = ? AND is_deleted = ?", sessionID, false).
 		First(&session).Error; err != nil {
-		return &session, err
+		return nil, err
 	}
 	// The Redis path validates liveness via ensureSessionActive; the DB
 	// fallback must apply the same rules or logged-out/expired sessions
@@ -109,16 +116,16 @@ func (d *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) 
 	if err := sessionUsable(&session); err != nil {
 		return nil, err
 	}
-	if err := d.db.WithContext(ctx).
-		Table(d.userTableName).
+	if err := a.db.WithContext(ctx).
+		Table(a.userTableName).
 		Select("id", "roles").
 		Where("id = ?", session.UserID).
 		First(&session.User).Error; err != nil {
-		return &session, err
+		return nil, err
 	}
 
-	if d.redis != nil {
-		_ = d.SetSessionToRedis(ctx, &SessionData{
+	if a.redis != nil {
+		_ = a.SetSessionToRedis(ctx, &SessionData{
 			ID:     session.ID,
 			UserID: session.UserID,
 			Roles:  session.User.Roles,
@@ -137,10 +144,10 @@ func (d *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) 
 //   - error: Error if session not found or Redis error occurs
 func (a *Authorization) GetSessionFromRedis(ctx context.Context, sessionID string) (*SessionData, error) {
 	if a == nil || a.redis == nil {
-		return nil, fmt.Errorf("redis is not configured")
+		return nil, errors.New("redis is not configured")
 	}
 	if sessionID == "" {
-		return nil, fmt.Errorf("session ID cannot be empty")
+		return nil, errors.New("session ID cannot be empty")
 	}
 
 	redisKey := buildRedisKey(a.redisPrefix, sessionID)
@@ -155,7 +162,7 @@ func (a *Authorization) GetSessionFromRedis(ctx context.Context, sessionID strin
 	return deserializeSessionData([]byte(data))
 }
 
-// SetSession stores session data in Redis cache.
+// SetSessionToRedis stores session data in Redis cache.
 //
 // Parameters:
 //   - ctx: The context
@@ -165,7 +172,7 @@ func (a *Authorization) GetSessionFromRedis(ctx context.Context, sessionID strin
 //   - error: Error if storage fails
 func (a *Authorization) SetSessionToRedis(ctx context.Context, session *SessionData) error {
 	if a == nil || a.redis == nil {
-		return fmt.Errorf("redis is not configured")
+		return errors.New("redis is not configured")
 	}
 	if err := validateSessionData(session); err != nil {
 		return err
@@ -184,7 +191,7 @@ func (a *Authorization) SetSessionToRedis(ctx context.Context, session *SessionD
 	return nil
 }
 
-// createSession persists a new session row.
+// CreateSession persists a new session row.
 func (a *Authorization) CreateSession(o *AuthorizeOptions) (string, error) {
 	if a == nil {
 		return "", errors.New("authorization is not initialized")
@@ -242,7 +249,7 @@ func accountToJSONB(account *Account) JSONBAny {
 // GetSessionID returns the session id carried by the request's session
 // cookie, or "" when absent.
 func (a *Authorization) GetSessionID(r *http.Request) string {
-	return readCookie(r, a.cookieSessionName)
+	return readCookie(r, a.sessionCookie(false).Name)
 }
 
 // SetSessionIDCookie writes the WEB session cookie used by UseWEBAuthorization.
@@ -250,17 +257,22 @@ func (a *Authorization) SetSessionIDCookie(w http.ResponseWriter, r *http.Reques
 	if sessionID == "" {
 		return
 	}
-	secure := isSecureRequest(r)
+	_, secure, err := a.origin(r)
+	if err != nil {
+		secure = isSecureRequest(r)
+	}
+	setCookie(w, a.sessionCookie(secure), sessionID)
+}
+
+// sessionCookie resolves the WEB session cookie definition. It honors
+// CookieOptions.SessionToken so CrossSubdomainCookies can share the session
+// across subdomains. The name carries no __Secure- prefix, so it is stable
+// regardless of scheme.
+func (a *Authorization) sessionCookie(secure bool) CookieOption {
 	maxAge := 365 * 24 * time.Hour
 	if d, err := ParseCustomDuration(a.refreshTokenDuration, DefaultRefreshTokenDuration); err == nil {
 		maxAge = d
 	}
-	setCookie(w, CookieOption{
-		Name:     a.cookieSessionName,
-		HTTPOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		Secure:   secure,
-		MaxAge:   maxAge,
-	}, sessionID)
+	jar := a.jar(secure)
+	return jar.def(a.cookies.SessionToken, jar.base(a.cookieSessionName, maxAge))
 }

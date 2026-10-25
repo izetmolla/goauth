@@ -2,7 +2,6 @@ package goauth
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 )
@@ -156,16 +155,11 @@ func normalizeRoleGrants(grants []string) []string {
 func roleGrantsFromAnySlice(items []any) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
-		switch v := item.(type) {
-		case string:
-			if s := strings.TrimSpace(v); s != "" {
+		if s, ok := item.(string); ok {
+			if s = strings.TrimSpace(s); s != "" {
 				out = append(out, s)
 			}
 		}
 	}
 	return out
 }
-
-// compile-time assertion that errors.New (and therefore errors.Is) still
-// works on our sentinels even if someone wraps them.
-var _ = errors.Is

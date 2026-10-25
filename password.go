@@ -1,14 +1,13 @@
 package goauth
 
 import (
-	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 )
@@ -29,10 +28,8 @@ const (
 // Salt and hash segments use base64 raw URL encoding (no padding).
 func HashPassword(password string) (string, error) {
 	salt := make([]byte, passwordSaltBytes)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return "", err
-	}
-	return encodePasswordHash(passwordIterations, salt, password), nil
+	_, _ = rand.Read(salt) // never returns an error since Go 1.24
+	return encodePasswordHash(passwordIterations, salt, password)
 }
 
 // CheckPassword reports whether password matches a hash produced by HashPassword.
@@ -41,19 +38,25 @@ func CheckPassword(hash, password string) bool {
 	if err != nil {
 		return false
 	}
-	got := pbkdf2SHA256([]byte(password), salt, iter, len(want))
+	got, err := pbkdf2.Key(sha256.New, password, salt, iter, len(want))
+	if err != nil {
+		return false
+	}
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
-func encodePasswordHash(iterations int, salt []byte, password string) string {
-	key := pbkdf2SHA256([]byte(password), salt, iterations, passwordKeyBytes)
+func encodePasswordHash(iterations int, salt []byte, password string) (string, error) {
+	key, err := pbkdf2.Key(sha256.New, password, salt, iterations, passwordKeyBytes)
+	if err != nil {
+		return "", err
+	}
 	enc := base64.RawURLEncoding
 	return fmt.Sprintf("%s%d$%s$%s",
 		passwordHashPrefix,
 		iterations,
 		enc.EncodeToString(salt),
 		enc.EncodeToString(key),
-	)
+	), nil
 }
 
 func decodePasswordHash(hash string) (iterations int, salt, key []byte, err error) {
@@ -78,34 +81,4 @@ func decodePasswordHash(hash string) (iterations int, salt, key []byte, err erro
 		return 0, nil, nil, errors.New("goauth: invalid password hash digest")
 	}
 	return iterations, salt, key, nil
-}
-
-func pbkdf2SHA256(password, salt []byte, iter, keyLen int) []byte {
-	prf := func(key, msg []byte) []byte {
-		mac := hmac.New(sha256.New, key)
-		mac.Write(msg)
-		return mac.Sum(nil)
-	}
-	hashLen := sha256.Size
-	numBlocks := (keyLen + hashLen - 1) / hashLen
-	out := make([]byte, 0, numBlocks*hashLen)
-	for block := 1; block <= numBlocks; block++ {
-		msg := make([]byte, len(salt)+4)
-		copy(msg, salt)
-		msg[len(salt)] = byte(block >> 24)
-		msg[len(salt)+1] = byte(block >> 16)
-		msg[len(salt)+2] = byte(block >> 8)
-		msg[len(salt)+3] = byte(block)
-		u := prf(password, msg)
-		t := make([]byte, len(u))
-		copy(t, u)
-		for i := 1; i < iter; i++ {
-			u = prf(password, u)
-			for j := range t {
-				t[j] ^= u[j]
-			}
-		}
-		out = append(out, t...)
-	}
-	return out[:keyLen]
 }

@@ -40,7 +40,7 @@ type Options struct {
 	// ClientSecret is the client secret generated in the Azure portal.
 	ClientSecret string
 	// TenantID controls which accounts may sign in. Accepted values:
-	//   - a tenant GUID         → single-tenant (your organisation only)
+	//   - a tenant GUID         → single-tenant (your organization only)
 	//   - "common"              → any Azure AD or personal Microsoft account
 	//   - "organizations"       → any Azure AD account
 	//   - "consumers"           → personal Microsoft accounts only

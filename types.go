@@ -66,17 +66,12 @@ func asString(v any) string {
 		return strconv.FormatInt(x, 10)
 	case bool:
 		return strconv.FormatBool(x)
-	case nil:
-		return ""
 	default:
 		return ""
 	}
 }
 
-// JSONBAny is a map of string keys to any values
-// It is used to store arbitrary JSON data in a PostgreSQL jsonb column
-// It is used to store arbitrary JSON data in a PostgreSQL jsonb column
-
+// JSONBAny is a JSON object stored in a PostgreSQL jsonb column.
 type JSONBAny map[string]any
 
 func (a JSONBAny) Value() (driver.Value, error) {
@@ -111,18 +106,18 @@ func (a *JSONBAny) Scan(value any) error {
 	*a = JSONBAny(out)
 	return nil
 }
+
+// ToString returns the JSON encoding of a, or "{}" if it cannot be encoded.
 func (a JSONBAny) ToString() string {
-	json, err := json.Marshal(a)
+	b, err := json.Marshal(a)
 	if err != nil {
-		fmt.Println("Error marshalling JSONBAny to string: ", err)
 		return "{}"
 	}
-	return string(json)
+	return string(b)
 }
 
-// JSONBArray is a positional JSONB list used by [EntityRecord.Data]. Values
-// are addressed by their [EntityAttribute.Position] index, so field names never
-// repeat in storage.
+// JSONBArray is a JSON array stored in a jsonb column, e.g. a user's role
+// grants ("admin:rw").
 type JSONBArray []any
 
 func (JSONBArray) GormDataType() string {
@@ -133,11 +128,7 @@ func (a JSONBArray) Value() (driver.Value, error) {
 	if a == nil {
 		return []byte("[]"), nil
 	}
-	b, err := json.Marshal(a)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
+	return json.Marshal(a)
 }
 
 func (a *JSONBArray) Scan(value any) error {
@@ -161,11 +152,11 @@ func (a *JSONBArray) Scan(value any) error {
 	return json.Unmarshal(raw, a)
 }
 
+// ToString returns the JSON encoding of a, or "[]" if it cannot be encoded.
 func (a JSONBArray) ToString() string {
-	json, err := json.Marshal(a)
+	b, err := json.Marshal(a)
 	if err != nil {
-		fmt.Println("Error marshalling JSONBArray to string: ", err)
 		return "[]"
 	}
-	return string(json)
+	return string(b)
 }

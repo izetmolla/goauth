@@ -19,7 +19,7 @@ type User struct {
 	User    JSONBAny   `json:"user" gorm:"-"`
 }
 
-// User contains the information common amongst most OAuth and OAuth2 providers.
+// OAuthUser contains the information common amongst most OAuth and OAuth2 providers.
 // All the "raw" data from the provider can be found in the `RawData` field.
 type OAuthUser struct {
 	ID                string
@@ -42,16 +42,16 @@ type OAuthUser struct {
 	Image             string
 }
 
-func (d *Authorization) getUserRolesFromDB(ctx context.Context, userID string) (JSONBArray, error) {
-	if d == nil || d.db == nil {
+func (a *Authorization) getUserRolesFromDB(ctx context.Context, userID string) (JSONBArray, error) {
+	if a == nil || a.db == nil {
 		return nil, errors.New("db manager is not initialized")
 	}
 	if userID == "" {
 		return nil, errors.New("user ID cannot be empty")
 	}
 	var user User
-	err := d.db.WithContext(ctx).
-		Table(d.userTableName).
+	err := a.db.WithContext(ctx).
+		Table(a.userTableName).
 		Select("roles").
 		Where("id = ?", userID).
 		First(&user).Error
@@ -75,7 +75,7 @@ type AuthData struct {
 // User returns the authenticated principal for the current request.
 // Pass fromAPI=true to read it out of the JWT instead of the session
 // cookie. The variadic shape preserves the original ergonomic API.
-func (a *Authorization) User(r *http.Request, reqCtx context.Context, fromAPI ...bool) (*AuthData, error) {
+func (a *Authorization) User(r *http.Request, reqCtx context.Context, fromAPI ...bool) (*AuthData, error) { //nolint:revive // public API; reordering the context would break callers
 	useAPI := len(fromAPI) > 0 && fromAPI[0]
 	var (
 		data AuthData
@@ -113,7 +113,7 @@ func (a *Authorization) GetAuthDataAPI(r *http.Request) (AuthData, error) {
 
 // GetAuthDataWEB extracts the authenticated principal from a
 // cookie-protected request by loading the matching session row.
-func (a *Authorization) GetAuthDataWEB(r *http.Request, reqCtx context.Context) (AuthData, error) {
+func (a *Authorization) GetAuthDataWEB(r *http.Request, reqCtx context.Context) (AuthData, error) { //nolint:revive // public API; reordering the context would break callers
 	session, err := a.GetSession(reqCtx, a.GetSessionID(r))
 	if err != nil {
 		return AuthData{}, err

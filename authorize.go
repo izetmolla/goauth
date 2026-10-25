@@ -3,7 +3,6 @@ package goauth
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
@@ -53,7 +52,7 @@ func NewAuthorizeOptions(opts ...AuthorizeOptionsFunc) *AuthorizeOptions {
 // It returns the token pair, the new session id and an error, if any.
 func (a *Authorization) Authorize(opts ...AuthorizeOptionsFunc) (Tokens, string, error) {
 	if a == nil {
-		return Tokens{}, "", errors.New("authorization is not initialized")
+		return Tokens{}, "", ErrNotInitialized
 	}
 	options := NewAuthorizeOptions(opts...)
 
@@ -63,11 +62,13 @@ func (a *Authorization) Authorize(opts ...AuthorizeOptionsFunc) (Tokens, string,
 		}
 	}
 
-	if !json.Valid([]byte(options.content.ToString())) {
-		return Tokens{}, "", errors.New("invalid content JSON payload")
+	// ToString swallows marshal errors (returning "{}"/"[]"), so validate by
+	// marshaling directly.
+	if _, err := json.Marshal(options.content); err != nil {
+		return Tokens{}, "", fmt.Errorf("invalid content JSON payload: %w", err)
 	}
-	if !json.Valid([]byte(options.roles.ToString())) {
-		return Tokens{}, "", errors.New("invalid roles JSON payload")
+	if _, err := json.Marshal(options.roles); err != nil {
+		return Tokens{}, "", fmt.Errorf("invalid roles JSON payload: %w", err)
 	}
 
 	sessionID, err := a.CreateSession(options)

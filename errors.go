@@ -3,9 +3,10 @@ package goauth
 import "errors"
 
 var (
+	// ErrNotInitialized is returned when a method is called on a nil *Authorization.
 	ErrNotInitialized = errors.New("authorization: not initialized")
 
-	// Token & session errors.
+	// Token and session errors.
 	ErrMissingJWTContext   = errors.New("authorization: missing jwt token in context")
 	ErrInvalidClaims       = errors.New("authorization: invalid claims")
 	ErrInvalidRoles        = errors.New("authorization: invalid roles")

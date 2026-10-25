@@ -1,6 +1,6 @@
 package goauth
 
-// AuthConfig controls the per-route behaviour of the API/WEB middlewares.
+// AuthConfig controls the per-route behavior of the API/WEB middlewares.
 //
 // Build it with NewAuthConfig + WithXxx options. The zero value is a
 // valid no-op config: no excluded paths, no role gate.
@@ -19,7 +19,7 @@ func defaultAuthConfig() *AuthConfig {
 	}
 }
 
-// NewAuthConfig applies the provided options on top of the defaults.
+// NewAuthConfigOptions applies the provided options on top of the defaults.
 func NewAuthConfigOptions(opts ...AuthConfigOptions) *AuthConfig {
 	cfg := defaultAuthConfig()
 	for _, opt := range opts {

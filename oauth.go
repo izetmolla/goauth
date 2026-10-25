@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -62,13 +64,13 @@ func authorizationURL(p *OAuthProvider, callbackURL, state, codeVerifier, nonce 
 // exchangeCode swaps an authorization code for tokens at the token endpoint.
 func exchangeCode(ctx context.Context, p *OAuthProvider, code, callbackURL, codeVerifier string) (*TokenSet, error) {
 	if p == nil {
-		return nil, fmt.Errorf("oauth provider is required")
+		return nil, errors.New("oauth provider is required")
 	}
 	if code == "" {
-		return nil, fmt.Errorf("authorization code is required")
+		return nil, errors.New("authorization code is required")
 	}
 	if p.TokenURL == "" {
-		return nil, fmt.Errorf("provider missing TokenURL")
+		return nil, errors.New("provider missing TokenURL")
 	}
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
@@ -105,11 +107,7 @@ func exchangeCode(ctx context.Context, p *OAuthProvider, code, callbackURL, code
 		return nil, fmt.Errorf("token exchange: status %d: %s", resp.StatusCode, string(body))
 	}
 
-	tokens, err := parseTokenResponse(body, resp.Header.Get("Content-Type"))
-	if err != nil {
-		return nil, err
-	}
-	return tokens, nil
+	return parseTokenResponse(body, resp.Header.Get("Content-Type"))
 }
 
 // parseTokenResponse handles both JSON and (legacy) form-encoded token bodies,
@@ -136,8 +134,12 @@ func parseTokenResponse(body []byte, contentType string) (*TokenSet, error) {
 	ts.IDToken = asString(raw["id_token"])
 	ts.RefreshToken = asString(raw["refresh_token"])
 	ts.Scope = asString(raw["scope"])
-	if v, ok := raw["expires_in"].(float64); ok {
+	// JSON bodies decode numbers as float64; form-encoded bodies yield strings.
+	switch v := raw["expires_in"].(type) {
+	case float64:
 		ts.ExpiresIn = int64(v)
+	case string:
+		ts.ExpiresIn, _ = strconv.ParseInt(v, 10, 64)
 	}
 	return ts, nil
 }
@@ -145,10 +147,10 @@ func parseTokenResponse(body []byte, contentType string) (*TokenSet, error) {
 // fetchUserInfo calls the userinfo endpoint with the access token.
 func fetchUserInfo(ctx context.Context, p *OAuthProvider, tokens *TokenSet) (Profile, error) {
 	if p == nil {
-		return nil, fmt.Errorf("oauth provider is required")
+		return nil, errors.New("oauth provider is required")
 	}
 	if tokens == nil {
-		return nil, fmt.Errorf("tokens are required")
+		return nil, errors.New("tokens are required")
 	}
 	if p.UserInfoURL == "" {
 		// OIDC providers without a userinfo endpoint rely on the id_token; the

@@ -1,0 +1,40 @@
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - dupl
+    - errorlint
+    - gocritic
+    - goconst
+    - misspell
+    - nilerr
+    - noctx
+    - perfsprint
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+  settings:
+    dupl:
+      threshold: 80
+    goconst:
+      ignore-string-values: ["^(message|code|error)$"] # JSON keys read better inline
+    misspell:
+      locale: US
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Table-driven tests repeat their scaffolding on purpose.
+      - path: _test\.go
+        linters: [dupl, goconst]
+      # Doc comments on every exported identifier add noise, not clarity.
+      - linters: [revive]
+        text: "^(exported|package-comments):"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

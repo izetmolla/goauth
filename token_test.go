@@ -95,3 +95,14 @@ func TestSignTokenPairRoundTrip(t *testing.T) {
 			accessClaims.ExpiresAt.Time, refreshClaims.ExpiresAt.Time)
 	}
 }
+
+func TestExtractTokenRejectsAccessToken(t *testing.T) {
+	a := &Authorization{JWTSecret: "test-secret", accessTokenDuration: "5m", refreshTokenDuration: "7d"}
+	access, _, err := a.SignTokenPair(NewAuthorizeOptions(a.WithUserID("user-1")), "session-1")
+	if err != nil {
+		t.Fatalf("SignTokenPair: %v", err)
+	}
+	if _, err := a.ExtractToken(access); err == nil {
+		t.Error("ExtractToken accepted an access token as a refresh token")
+	}
+}

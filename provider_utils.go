@@ -1,38 +1,34 @@
 package goauth
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
+
+// discoveryMu serializes OIDC discovery. Providers are shared by every request,
+// so filling in their endpoints must not race with concurrent readers.
+var discoveryMu sync.Mutex
 
 // origin resolves the external base URL and whether it is HTTPS, honoring
 // Config.AuthURL and request headers when AuthURL is unset.
 func (a *Authorization) origin(r *http.Request) (string, bool, error) {
 	if a == nil {
-		return "", false, fmt.Errorf("authorization is not initialized")
+		return "", false, ErrNotInitialized
 	}
 	if a.AuthURL != "" {
 		return parseOriginURL(a.AuthURL)
 	}
-	// if !a.TrustHost {
-	// 	return "", false, fmt.Errorf("untrusted host: %s", a.AuthURL)
-	// }
-	scheme := "http"
-	isSecure := isSecureRequest(r)
-	if isSecure {
-		scheme = "https"
-	}
-	host := r.Host
-	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
-		host = fwd
-	}
+	host := cmp.Or(r.Header.Get("X-Forwarded-Host"), r.Host)
 
-	return scheme + "://" + host, isSecure, nil
+	return requestScheme(r) + "://" + host, isSecureRequest(r), nil
 }
 
 // parseOriginURL normalizes AuthURL into an absolute base URL. Values without a
@@ -80,8 +76,10 @@ func callbackQuery(r *http.Request) map[string]string {
 // It is a no-op when the endpoints are already set or no Issuer is configured.
 func discover(ctx context.Context, p *OAuthProvider) error {
 	if p == nil {
-		return fmt.Errorf("oauth provider is required")
+		return errors.New("oauth provider is required")
 	}
+	discoveryMu.Lock()
+	defer discoveryMu.Unlock()
 	if p.Issuer == "" {
 		return nil
 	}
@@ -119,12 +117,10 @@ func discover(ctx context.Context, p *OAuthProvider) error {
 
 // callbackURL builds the provider callback URL for the current request.
 func (a *Authorization) callbackURL(origin, providerID string) string {
-	// TODO: Implement this
-	basePath := "/api/authorization/provider/"
-	return origin + basePath + providerID + "/callback"
+	return a.signInURL(origin, providerID) + "/callback"
 }
 
+// signInURL builds the provider sign-in URL; it matches the routes in Handler.
 func (a *Authorization) signInURL(origin, providerID string) string {
-	basePath := "/api/authorization/provider/"
-	return origin + basePath + providerID
+	return origin + DefaultBasePath + "/provider/" + url.PathEscape(providerID)
 }
