@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // Middleware wraps an http.Handler, the standard net/http middleware shape.
@@ -21,51 +19,41 @@ func extractBearerToken(r *http.Request) string {
 	return r.URL.Query().Get("access_token")
 }
 
-// parseJWT validates the raw token against the configured secret and returns it.
-func (a *Authorization) parseJWT(raw string) (*jwt.Token, error) {
+// parseAccessToken verifies the raw token (signature, configured algorithm,
+// required expiry) and rejects refresh tokens.
+func (a *Authorization) parseAccessToken(raw string) (*apiPrincipal, error) {
 	if raw == "" {
 		return nil, errors.New("missing or malformed JWT")
 	}
-	token, err := jwt.Parse(raw, a.keyFunc)
+	claims := &accessClaims{}
+	token, err := a.jwtParser().ParseWithClaims(raw, claims, a.keyFunc)
 	if err != nil {
 		return nil, err
 	}
 	if !token.Valid {
 		return nil, errors.New("invalid or expired JWT")
 	}
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && isRefreshToken(claims) {
+	if claims.isRefresh() {
 		return nil, errors.New("refresh token cannot be used as an access token")
 	}
-	return token, nil
-}
-
-// isRefreshToken reports whether claims belong to a refresh token. Tokens
-// minted before the token_type claim existed are recognized by session_id,
-// which only refresh tokens carry.
-func isRefreshToken(claims jwt.MapClaims) bool {
-	switch stringClaim(claims, "token_type") {
-	case tokenTypeRefresh:
-		return true
-	case tokenTypeAccess:
-		return false
-	default:
-		return stringClaim(claims, "session_id") != ""
-	}
+	return &apiPrincipal{token: token, claims: claims}, nil
 }
 
 // UseAPIAuthorization returns a net/http middleware that protects API routes
 // with a Bearer JWT. On success the validated token is stored on the request
 // context (see GetClaims/JWTFromContext); optional roles are enforced.
 func (a *Authorization) UseAPIAuthorization(opts ...AuthConfigOptions) Middleware {
-	return a.protect(opts, func(w http.ResponseWriter, r *http.Request) (*http.Request, []string, bool) {
-		token, err := a.parseJWT(extractBearerToken(r))
+	return a.protect(opts, func(w http.ResponseWriter, r *http.Request) (*http.Request, func() []string, bool) {
+		p, err := a.parseAccessToken(extractBearerToken(r))
 		if err != nil {
 			writeAPIError(w, http.StatusUnauthorized, codeUnauthorized, err.Error())
 			return nil, nil, false
 		}
-		r = r.WithContext(withJWT(r.Context(), token))
-		roles, _ := a.GetRoles(r) // a missing roles claim grants no roles
-		return r, roles, true
+		roles := func() []string {
+			grants, _ := p.Roles() // a missing roles claim grants no roles
+			return grants
+		}
+		return r.WithContext(withPrincipal(r.Context(), p)), roles, true
 	})
 }
 
@@ -74,7 +62,7 @@ func (a *Authorization) UseAPIAuthorization(opts ...AuthConfigOptions) Middlewar
 // redirected to the sign-in URL (preserving the original request URL
 // in `redirectUrl`).
 func (a *Authorization) UseWEBAuthorization(opts ...AuthConfigOptions) Middleware {
-	return a.protect(opts, func(w http.ResponseWriter, r *http.Request) (*http.Request, []string, bool) {
+	return a.protect(opts, func(w http.ResponseWriter, r *http.Request) (*http.Request, func() []string, bool) {
 		session, err := a.GetSession(r.Context(), a.GetSessionID(r))
 		if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrSessionExpired) {
 			http.Redirect(w, r, a.getAuthRedirectURL(r), http.StatusTemporaryRedirect)
@@ -84,15 +72,16 @@ func (a *Authorization) UseWEBAuthorization(opts ...AuthConfigOptions) Middlewar
 			writeAPIError(w, http.StatusInternalServerError, codeServerError, err.Error())
 			return nil, nil, false
 		}
-		return r, FormatRoles(session.User.Roles), true
+		return r, func() []string { return FormatRoles(session.User.Roles) }, true
 	})
 }
 
 // protect holds the plumbing shared by the auth middlewares: the nil guard,
 // excluded paths and the role gate. authenticate returns the (possibly
-// updated) request and the caller's role grants, or false once it has
+// updated) request and a function yielding the caller's role grants, which
+// is only called when the route has a role gate, or false once it has
 // written a response.
-func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http.ResponseWriter, *http.Request) (*http.Request, []string, bool)) Middleware {
+func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http.ResponseWriter, *http.Request) (*http.Request, func() []string, bool)) Middleware {
 	cfg := NewAuthConfigOptions(opts...)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +98,7 @@ func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http
 				return
 			}
 			if len(cfg.roles) > 0 {
-				if hasRole, _, _ := a.GetRole(cfg.roles, roles); !hasRole {
+				if hasRole, _, _ := a.GetRole(cfg.roles, roles()); !hasRole {
 					writeAPIError(w, http.StatusForbidden, codeInsufficientPermissions, "insufficient permissions: "+strings.Join(cfg.roles, ", "))
 					return
 				}

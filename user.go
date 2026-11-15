@@ -40,6 +40,9 @@ type OAuthUser struct {
 	ExpiresAt         time.Time
 	IDToken           string
 	Image             string
+	// EmailVerified reports that Email is confirmed. Used by
+	// Verification.EmailConfirmation.RequireConfirmed.
+	EmailVerified bool
 }
 
 func (a *Authorization) getUserRolesFromDB(ctx context.Context, userID string) (JSONBArray, error) {
@@ -95,15 +98,15 @@ func (a *Authorization) User(r *http.Request, reqCtx context.Context, fromAPI ..
 // GetAuthDataAPI extracts the authenticated principal from a JWT-protected
 // request.
 func (a *Authorization) GetAuthDataAPI(r *http.Request) (AuthData, error) {
-	claims, err := a.GetClaims(r)
-	if err != nil {
-		return AuthData{}, err
+	p := principalFrom(r.Context())
+	if p == nil {
+		return AuthData{}, ErrMissingJWTContext
 	}
 	data := AuthData{
-		SessionID: stringClaim(claims, "session_id"),
-		UserID:    stringClaim(claims, "user_id"),
+		SessionID: p.claims.SessionID,
+		UserID:    p.claims.UserID,
 	}
-	if roles, err := a.GetRoles(r); err == nil {
+	if roles, err := p.Roles(); err == nil {
 		data.Roles = roles
 	} else {
 		data.Roles = []string{}

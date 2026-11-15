@@ -43,12 +43,17 @@ func (a *Authorization) HandleRefreshToken(next http.Handler) http.Handler {
 
 // refreshFromRequest validates the request's refresh token (Authorization
 // header, else JSON body) and its session, then issues a new access token.
+// With KeepRefreshTokenServerSide, a request without a refresh token is
+// authenticated by the WEB session cookie instead; refreshToken is then "".
 func (a *Authorization) refreshFromRequest(r *http.Request) (refreshToken, accessToken string, session *Session, err error) {
 	refreshToken, err = a.GetTokenFromHeader(r.Header.Get("Authorization"))
 	if err != nil {
 		refreshToken = bodyRefreshToken(r)
 	}
 	if refreshToken == "" {
+		if a.keepRefreshTokenServerSide {
+			return a.refreshFromSessionCookie(r)
+		}
 		return "", "", nil, ErrMissingRefreshToken
 	}
 	claims, err := a.ExtractToken(refreshToken)
@@ -63,6 +68,24 @@ func (a *Authorization) refreshFromRequest(r *http.Request) (refreshToken, acces
 	}
 	accessToken, err = a.RefreshAccessToken(claims, session)
 	return refreshToken, accessToken, session, err
+}
+
+// refreshFromSessionCookie issues a new access token for the session named by
+// the HttpOnly WEB session cookie. A missing cookie reports
+// ErrMissingRefreshToken so callers see the same error as before.
+func (a *Authorization) refreshFromSessionCookie(r *http.Request) (refreshToken, accessToken string, session *Session, err error) {
+	sessionID := a.GetSessionID(r)
+	if sessionID == "" {
+		return "", "", nil, ErrMissingRefreshToken
+	}
+	if session, err = a.GetSession(r.Context(), sessionID); err != nil {
+		return "", "", nil, err
+	}
+	accessToken, err = a.RefreshAccessToken(&RefreshTokenClaims{
+		SessionID: session.ID,
+		UserID:    session.UserID,
+	}, session)
+	return "", accessToken, session, err
 }
 
 // bodyRefreshToken pulls a refresh token out of the JSON body. Errors

@@ -19,6 +19,12 @@ type Options struct {
 	Name      string
 	Fields    []goauth.CredentialField
 	Authorize func(ctx context.Context, credentials map[string]string, r *http.Request) (*goauth.OAuthUser, error)
+
+	// Register enables sign-up: it creates the account and returns the new
+	// user, who is then signed in. Optional.
+	Register func(ctx context.Context, fields map[string]string, r *http.Request) (*goauth.OAuthUser, error)
+	// RegisterFields are the sign-up inputs. Default: Fields.
+	RegisterFields []goauth.CredentialField
 }
 
 // New builds a credentials provider. Authorize is required. Credentials sessions
@@ -37,5 +43,8 @@ func New(o Options) goauth.Provider {
 		DisplayName: name,
 		Fields:      o.Fields,
 		Authorize:   o.Authorize,
+
+		Register:       o.Register,
+		RegisterFields: o.RegisterFields,
 	}
 }

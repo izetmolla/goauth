@@ -74,11 +74,16 @@ func asString(v any) string {
 // JSONBAny is a JSON object stored in a PostgreSQL jsonb column.
 type JSONBAny map[string]any
 
+// Value encodes a as JSON text. It returns a string rather than []byte so
+// every driver binds it as text: PostgreSQL json/jsonb, MySQL JSON, SQLite
+// TEXT and SQL Server nvarchar all accept a string, while some reject a
+// binary parameter.
 func (a JSONBAny) Value() (driver.Value, error) {
 	if a == nil {
-		return []byte("{}"), nil
+		return "{}", nil
 	}
-	return json.Marshal(a)
+	b, err := json.Marshal(a)
+	return string(b), err
 }
 
 func (a *JSONBAny) Scan(value any) error {
@@ -124,11 +129,13 @@ func (JSONBArray) GormDataType() string {
 	return "json"
 }
 
+// Value encodes a as JSON text; see JSONBAny.Value for why it is a string.
 func (a JSONBArray) Value() (driver.Value, error) {
 	if a == nil {
-		return []byte("[]"), nil
+		return "[]", nil
 	}
-	return json.Marshal(a)
+	b, err := json.Marshal(a)
+	return string(b), err
 }
 
 func (a *JSONBArray) Scan(value any) error {

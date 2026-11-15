@@ -72,7 +72,7 @@ func cutScheme(header, scheme string) (string, bool) {
 
 // ExtractToken parses and validates a refresh token, returning its claims.
 func (a *Authorization) ExtractToken(tokenString string) (*RefreshTokenClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &RefreshTokenClaims{}, a.keyFunc)
+	token, err := a.jwtParser().ParseWithClaims(tokenString, &RefreshTokenClaims{}, a.keyFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (a *Authorization) RefreshAccessToken(
 		return "", errors.New("session data is required")
 	}
 
-	accessTokenDuration, err := ParseCustomDuration(a.accessTokenDuration, DefaultAccessTokenDuration)
+	accessTokenDuration, err := a.accessTokenTTL()
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +134,7 @@ func (a *Authorization) RefreshAccessToken(
 		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
 		IssuedAt:  jwt.NewNumericDate(now),
 	}
-	return jwt.NewWithClaims(resolveSigningMethod(a.signingMethod), claims).SignedString([]byte(a.JWTSecret))
+	return jwt.NewWithClaims(a.jwtMethod(), claims).SignedString([]byte(a.JWTSecret))
 }
 
 // --- Token issuance -------------------------------------------------------
@@ -154,7 +154,7 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 
 	now := time.Now()
 
-	accessTokenDuration, err := ParseCustomDuration(a.accessTokenDuration, DefaultAccessTokenDuration)
+	accessTokenDuration, err := a.accessTokenTTL()
 	if err != nil {
 		return "", "", err
 	}
@@ -166,11 +166,11 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
 		IssuedAt:  jwt.NewNumericDate(now),
 	}
-	accessToken, err := jwt.NewWithClaims(resolveSigningMethod(a.signingMethod), accessClaims).SignedString([]byte(a.JWTSecret))
+	accessToken, err := jwt.NewWithClaims(a.jwtMethod(), accessClaims).SignedString([]byte(a.JWTSecret))
 	if err != nil {
 		return "", "", fmt.Errorf("sign access token: %w", err)
 	}
-	refreshTokenDuration, err := ParseCustomDuration(a.refreshTokenDuration, DefaultRefreshTokenDuration)
+	refreshTokenDuration, err := a.refreshTokenTTL()
 	if err != nil {
 		return "", "", err
 	}
@@ -181,13 +181,13 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 		// "tokenlife" describes the access-token lifetime, not the refresh
 		// token's own lifetime.
 		AccessTokenLifetime: accessTokenDuration.String(),
-		SigningMethodHMAC:   a.signingMethod,
+		SigningMethodHMAC:   a.jwtMethod().Alg(),
 		Content:             o.content,
 		Roles:               o.roles,
 		ExpiresAt:           jwt.NewNumericDate(now.Add(refreshTokenDuration)),
 		IssuedAt:            jwt.NewNumericDate(now),
 	}
-	refreshToken, err := jwt.NewWithClaims(resolveSigningMethod(a.signingMethod), refreshClaims).SignedString([]byte(a.JWTSecret))
+	refreshToken, err := jwt.NewWithClaims(a.jwtMethod(), refreshClaims).SignedString([]byte(a.JWTSecret))
 	if err != nil {
 		return "", "", fmt.Errorf("sign refresh token: %w", err)
 	}
@@ -199,12 +199,4 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 // session cookie + redirect.
 func (a *Authorization) wantsTokens(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("X-Auth-Flow"), "token") || r.URL.Query().Get("flow") == "token"
-}
-
-// checkCSRF validates the signed double-submit token for unsafe actions.
-func (a *Authorization) checkCSRF(r *http.Request, secure bool) bool {
-	jar := a.jar(secure)
-	cookieVal := readCookie(r, jar.csrfToken().Name)
-	body := r.FormValue("csrfToken")
-	return verifyCSRF(cookieVal, body, a.JWTSecret)
 }

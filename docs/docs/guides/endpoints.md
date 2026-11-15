@@ -12,6 +12,14 @@ description: The routes served by auth.Handler(), their parameters and responses
 | `GET` | `/api/authorization/providers` | `auth.GetProviders` | List configured providers as JSON |
 | any | `/api/authorization/provider/{id}` | `auth.HandleSignIn` | Start sign-in |
 | any | `/api/authorization/provider/{id}/callback` | `auth.HandleCallback` | OAuth callback |
+| `POST` | `/api/authorization/provider/{id}/register` | `auth.HandleRegister` | Credentials sign-up (off by default) |
+| `GET` | `/api/authorization/register` | `auth.RegisterPage` | Sign-up page (off by default) |
+| | `/forgot`, `/password/*`, `/otp*`, `/verify-email*` | | Password reset, one-time codes, email confirmation (off by default, see [verification](./verification.md#4-endpoints)) |
+| `GET` | `/api/authorization/csrf` | `auth.GetCSRFToken` | CSRF token for custom forms |
+| `GET` | `/api/authorization/signin` | `auth.SignInPage` | Built-in sign-in page ([details](./sign-in-page.md)) |
+| `GET` | `/api/authorization/assets/{file}` | | The page's CSS and JS |
+
+Sign-in endpoints are on by default; sign-up and the verification endpoints are off until enabled. See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off).
 
 ## Mounting
 

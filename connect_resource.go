@@ -4,21 +4,37 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
+// validateConnectResourceID trims and checks a connect-flow resource id. An
+// empty id is allowed (OnProviderConnect is then not called).
+func validateConnectResourceID(resourceID string) (string, error) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return "", nil
+	}
+	if _, err := uuid.Parse(resourceID); err != nil {
+		return "", errors.New("resource id must be a valid uuid")
+	}
+	return resourceID, nil
+}
+
 // SetConnectResourceCookie stores the target resource id for a provider-connect OAuth round-trip.
+//
+// Deprecated: the resource id is now part of the signed connect intent, which
+// is created from the `?connect=1&resource_id=...` query parameters on the
+// sign-in endpoint. A cookie set by this function is ignored.
 func (a *Authorization) SetConnectResourceCookie(w http.ResponseWriter, r *http.Request, resourceID string) error {
 	if a == nil {
 		return ErrNotInitialized
 	}
-	resourceID = strings.TrimSpace(resourceID)
+	resourceID, err := validateConnectResourceID(resourceID)
+	if err != nil {
+		return err
+	}
 	if resourceID == "" {
 		return errors.New("resource id is required")
-	}
-	if _, err := uuid.Parse(resourceID); err != nil {
-		return errors.New("resource id must be a valid uuid")
 	}
 	_, secure, err := a.origin(r)
 	if err != nil {
@@ -26,13 +42,4 @@ func (a *Authorization) SetConnectResourceCookie(w http.ResponseWriter, r *http.
 	}
 	setCookie(w, a.jar(secure).connectResource(), resourceID)
 	return nil
-}
-
-func (a *Authorization) consumeConnectResourceCookie(w http.ResponseWriter, r *http.Request, jar *cookieJar) string {
-	if jar == nil {
-		return ""
-	}
-	resourceID := strings.TrimSpace(readCookie(r, jar.connectResource().Name))
-	expireCookie(w, jar.connectResource())
-	return resourceID
 }

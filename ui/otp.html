@@ -1,0 +1,32 @@
+{{define "title"}}Sign in with a code{{end}}
+{{define "heading"}}<span data-for="request">{{if .Code.HasCode}}Sign in with a code{{else}}Sign in with a magic link{{end}}</span><span data-for="code">Enter your code</span><span data-for="link">Confirm sign-in</span><span data-for="sent">Check your email</span>{{end}}
+{{define "sub"}}<span data-for="request">We'll email you a {{if .Code.HasCode}}one-time code{{else}}sign-in link{{end}}. No password needed.</span><span data-for="code">We sent a code to <strong data-ga-email>{{.Email}}</strong>.{{if .Code.HasLink}} You can also click the link in the email.{{end}}</span><span data-for="link">You're signing in as <strong>{{.Email}}</strong>.</span><span data-for="sent">Click the link in the email to sign in.</span>{{end}}
+{{define "content"}}
+    <form class="ga-form" method="post" action="{{.Actions.otpSend}}" data-for="request" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="step" value="request">
+      {{- template "email" .}}
+      {{template "submit" (or (and .Code.HasCode "Email me a code") "Email me a link")}}
+    </form>
+
+    <form class="ga-form" method="post" action="{{.Actions.otpVerify}}" data-for="code" data-provider="otp" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="step" value="code">
+      <input type="hidden" name="email" value="{{.Email}}" data-ga-email-input>
+      {{- template "code" .}}
+      {{template "submit" "Sign in"}}
+    </form>
+
+    <form class="ga-form" method="post" action="{{.Actions.otpVerify}}" data-for="link" data-provider="otp" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="step" value="link">
+      <input type="hidden" name="email" value="{{.Email}}">
+      <input type="hidden" name="token" value="{{.Token}}">
+      {{template "submit" "Continue"}}
+    </form>
+
+    {{- template "sent" .}}
+    {{- template "resend" .}}
+    {{- template "different" .}}
+    {{- template "back" .}}
+{{end}}

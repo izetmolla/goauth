@@ -67,4 +67,4 @@ Azure AD works with goauth's provider-**connect** flow: send a signed-in user to
 /api/authorization/provider/azuread-v2?connect=1&resource_id=<uuid>
 ```
 
-and after consent the `Config.OnProviderConnect` callback receives the `resource_id`, the OAuth `Account` (with the granted tokens/scopes), and the user — useful for attaching Microsoft Graph access (mail, files, calendar) to an existing account. Include the extra Graph scopes and `offline_access` in `Options.Scopes` to receive a refresh token.
+and after consent the `Config.OnProviderConnect` callback receives the `resource_id`, the OAuth `Account` (with the granted tokens/scopes), and the signed-in user who started the flow — useful for attaching Microsoft Graph access (mail, files, calendar) to an existing account. Include the extra Graph scopes and `offline_access` in `Options.Scopes` to receive a refresh token.

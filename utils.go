@@ -77,6 +77,63 @@ func deserializeSessionData(data []byte) (*SessionData, error) {
 	return &response, nil
 }
 
+// signingMethodFor resolves a configured HMAC algorithm name, rejecting
+// anything that is not HS256, HS384 or HS512.
+func signingMethodFor(method string) (*jwt.SigningMethodHMAC, error) {
+	switch strings.ToLower(method) {
+	case "hs256":
+		return jwt.SigningMethodHS256, nil
+	case "hs384":
+		return jwt.SigningMethodHS384, nil
+	case "hs512":
+		return jwt.SigningMethodHS512, nil
+	default:
+		return nil, fmt.Errorf("unsupported SigningMethod %q: use HS256, HS384 or HS512", method)
+	}
+}
+
+// newJWTParser builds the parser shared by every verification. It accepts
+// only the configured algorithm and requires an "exp" claim, so a token
+// signed with another HMAC size or without an expiry is rejected. A Parser
+// holds only configuration and is safe for concurrent use.
+func newJWTParser(method *jwt.SigningMethodHMAC) *jwt.Parser {
+	return jwt.NewParser(
+		jwt.WithValidMethods([]string{method.Alg()}),
+		jwt.WithExpirationRequired(),
+	)
+}
+
+// jwtMethod, jwtParser, accessTokenTTL and refreshTokenTTL return the values
+// resolved in New, falling back to resolving them on the fly for an
+// Authorization built without New (as some tests do).
+func (a *Authorization) jwtMethod() *jwt.SigningMethodHMAC {
+	if a.method != nil {
+		return a.method
+	}
+	return resolveSigningMethod(a.signingMethod)
+}
+
+func (a *Authorization) jwtParser() *jwt.Parser {
+	if a.parser != nil {
+		return a.parser
+	}
+	return newJWTParser(a.jwtMethod())
+}
+
+func (a *Authorization) accessTokenTTL() (time.Duration, error) {
+	if a.accessTTL > 0 {
+		return a.accessTTL, nil
+	}
+	return ParseCustomDuration(a.accessTokenDuration, DefaultAccessTokenDuration)
+}
+
+func (a *Authorization) refreshTokenTTL() (time.Duration, error) {
+	if a.refreshTTL > 0 {
+		return a.refreshTTL, nil
+	}
+	return ParseCustomDuration(a.refreshTokenDuration, DefaultRefreshTokenDuration)
+}
+
 func resolveSigningMethod(method string) *jwt.SigningMethodHMAC {
 	switch strings.ToLower(method) {
 	case "hs384":
@@ -138,12 +195,6 @@ func ParseCustomDuration(input, defaultInput string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid time unit: %q", unit)
 	}
 	return time.Duration(num) * multiplier, nil
-}
-
-// stringClaim safely extracts a string value from jwt.MapClaims.
-func stringClaim(claims jwt.MapClaims, key string) string {
-	s, _ := claims[key].(string)
-	return s
 }
 
 func FormatUser(user *User) any {

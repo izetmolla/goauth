@@ -41,7 +41,7 @@ Other helpers:
 
 ## Enabling Redis
 
-Web requests hit the database on every request. With Redis, the session and roles are cached:
+Web requests read the session and the user's roles from the database on every request, in **one** query (sessions `LEFT JOIN` users). With Redis configured, goauth also keeps a write-through copy of each session there:
 
 ```go
 import "github.com/redis/go-redis/v9"
@@ -71,11 +71,11 @@ myapp:sessions:3f0c9a51-...  →  {"id":"3f0c9a51-...","user_id":"5b1c...","role
 
 ### How lookups work with Redis
 
-1. Read `prefix:<id>` from Redis.
-2. **Hit**: still confirm in the database that the session is not signed out or expired, and read the user's current roles. If the roles changed, refresh the cache.
-3. **Miss**: load the session and user from the database, then write the cache entry with `RedisTTL`.
+1. Load the session and the user's current roles from the database in one query.
+2. **Usable**: write `prefix:<id>` to Redis with `RedisTTL` (one `SET`).
+3. **Signed out, expired, or user deleted**: delete `prefix:<id>` from Redis and reject the request.
 
-Because step 2 always confirms liveness, a signed-out session stops working immediately, even while its cache entry exists.
+goauth does not read Redis during a lookup. A cache hit would still need the database query above to confirm the session is live and the roles are current, so reading Redis first would only add a round trip. A signed-out session, a deleted user or a revoked role takes effect on the next request. The Redis copy is there for other services or your own code that read it with `GetSessionFromRedis`.
 
 :::info[Trade-off]
 This design favors correctness (instant revocation, live roles) over saving database queries. If you need fewer queries, keep `AccessTokenDuration` short and protect most traffic with `UseAPIAuthorization`, which never touches the database.

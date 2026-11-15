@@ -51,7 +51,7 @@ Arguments:
 |---|---|
 | `resourceID` | The `resource_id` UUID from the start URL |
 | `acc` | `*goauth.Account`: provider id, provider account id, access/refresh/ID tokens, scope, expiry |
-| `user` | The user `ResolveUser` returned for the connecting account |
+| `user` | The **signed-in** user who started the flow (`ID` and `Roles` from their session). `ResolveUser` is not called during a connect flow. |
 | `providerID` | For example `azuread-v2` |
 
 Returning an error shows it on the callback page.
@@ -64,9 +64,11 @@ Add `connect=1` and a `resource_id` UUID to the sign-in URL:
 /api/authorization/provider/azuread-v2?connect=1&resource_id=7d3c5c8e-2a0e-4c55-9f43-5d9a8a2b7f10
 ```
 
-1. goauth stores a **signed** connect-intent cookie and the resource id (15 minute lifetime).
+The user must be signed in: the start endpoint reads the WEB session cookie and answers `401` without it.
+
+1. goauth stores a **signed** connect-intent cookie that binds the signed-in user, their session and the resource id (15 minute lifetime).
 2. The provider runs its normal consent screen.
-3. On callback, goauth verifies the signed intent, calls `ResolveUser`, then `OnProviderConnect`.
+3. On callback, goauth verifies the signature, checks the session is still active and belongs to the same user, then calls `OnProviderConnect`. If the user signed out in the meantime the callback page shows an error.
 4. **No session is created and no session cookie is set.**
 5. The callback page shows a success message and a **Close this tab** button.
 
@@ -97,7 +99,7 @@ The message type is `microsoft-connect-completed` for every provider.
 
 ## Protecting the connect flow
 
-The connect start URL is public, like any sign-in URL. Before trusting a connection, check in `OnProviderConnect` that the user is allowed to modify `resourceID`:
+goauth guarantees that `user` is the signed-in user who started the flow, and the provider tokens are passed only to `OnProviderConnect` (they are never written into the callback page). It does **not** know who owns `resourceID`, so check in `OnProviderConnect` that the user is allowed to modify it:
 
 ```go
 OnProviderConnect: func(ctx context.Context, resourceID string, acc *goauth.Account, user *goauth.User, providerID string) error {
@@ -115,4 +117,4 @@ OnProviderConnect: func(ctx context.Context, resourceID string, acc *goauth.Acco
 
 ## Low-level helpers
 
-`auth.SetFlowIntentCookie(w, r, goauth.FlowIntentConnect)` and `auth.SetConnectResourceCookie(w, r, resourceID)` are the functions the start endpoint uses for `?connect=1`. The start endpoint clears both cookies at the beginning of every flow, so setting them yourself and then redirecting to `/provider/{id}` has no effect. Use the `connect=1&resource_id=...` query parameters instead.
+`auth.SetFlowIntentCookie` and `auth.SetConnectResourceCookie` are deprecated. Cookies they set are not honored as a connect intent, because a connect flow must be bound to a signed-in session. Use the `connect=1&resource_id=...` query parameters instead.

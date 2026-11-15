@@ -57,7 +57,7 @@ auth, err := goauth.New(&goauth.Config{
 | Field | Default | Notes |
 |---|---|---|
 | `JWTSecret` | **required** | Use at least 32 random bytes. Rotating it invalidates every token and signed cookie. |
-| `SigningMethod` | `HS256` | `HS256`, `HS384` or `HS512` (case-insensitive). Other values fall back to `HS256`. |
+| `SigningMethod` | `HS256` | `HS256`, `HS384` or `HS512` (case-insensitive). Any other value makes `New` return an error. Tokens are only accepted when signed with this exact algorithm and carrying an `exp` claim. |
 | `AuthURL` | from request | See [AuthURL](#authurl). |
 | `SignInRedirectURL` | `/sign-in` | Can be absolute, for example `https://auth.example.com/sign-in`. |
 | `AccessTokenDuration` | `60s` | See [Duration format](#duration-format). |
@@ -73,10 +73,14 @@ auth, err := goauth.New(&goauth.Config{
 | `Providers` | none | See [Providers](../providers/overview.md). |
 | `ResolveUser` | none | Required before any OAuth sign-in can complete. |
 | `OnProviderConnect` | none | See [Provider connect](./provider-connect.md). |
+| `Endpoints` | sign-in on, sign-up off | Switch built-in endpoints and pages on/off. See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off). |
+| `UI` | none | Branding for the pages and emails. |
+| `Verification` | all off | Password reset, email confirmation, one-time codes. See [verification](./verification.md). |
+| `KeepRefreshTokenServerSide` | `false` | Keep the refresh token out of the OAuth callback page; web clients refresh with the session cookie. See [Tokens and refresh](./tokens-and-refresh.md#keeping-the-refresh-token-out-of-the-browser). |
 
 ## Duration format
 
-`AccessTokenDuration` and `RefreshTokenDuration` are strings with one integer and one unit:
+`AccessTokenDuration` and `RefreshTokenDuration` are strings with one integer and one unit. They are parsed once in `New`, which returns an error for an invalid value, so a typo fails at startup instead of at the first sign-in:
 
 | Unit | Meaning | Example |
 |---|---|---|

@@ -1,0 +1,34 @@
+{{define "title"}}Confirm your email{{end}}
+{{define "heading"}}<span data-for="request link">Confirm your email</span><span data-for="code">Enter your code</span><span data-for="sent">Check your email</span><span data-for="done">Email confirmed</span>{{end}}
+{{define "sub"}}<span data-for="request">Enter your email and we'll send a new confirmation {{if .Code.HasCode}}code{{else}}link{{end}}.</span><span data-for="code">Enter the code we sent to <strong data-ga-email>{{.Email}}</strong>.</span><span data-for="link">Confirm that <strong>{{.Email}}</strong> is your email address.</span><span data-for="sent">Follow the link in the email to confirm your address.</span><span data-for="done">Thanks! Your account is ready.</span>{{end}}
+{{define "content"}}
+    <form class="ga-form" method="post" action="{{.Actions.verifySend}}" data-for="request" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="step" value="request">
+      {{- template "email" .}}
+      {{template "submit" "Send confirmation email"}}
+    </form>
+
+    <form class="ga-form" method="post" action="{{.Actions.verify}}" data-for="code" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="step" value="code">
+      <input type="hidden" name="email" value="{{.Email}}" data-ga-email-input>
+      {{- template "code" .}}
+      {{template "submit" "Confirm email"}}
+    </form>
+
+    <form class="ga-form" method="post" action="{{.Actions.verify}}" data-for="link" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="step" value="link">
+      <input type="hidden" name="email" value="{{.Email}}">
+      <input type="hidden" name="token" value="{{.Token}}">
+      {{template "submit" "Confirm email"}}
+    </form>
+
+    {{- template "sent" .}}
+    {{- template "resend" .}}
+    {{- template "done" .}}
+    {{- template "different" .}}
+    <div data-for="request code link sent">{{template "back" .}}</div>
+{{end}}
+{{define "donetext"}}Your email address is confirmed.{{end}}

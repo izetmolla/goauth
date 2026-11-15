@@ -110,6 +110,46 @@ type CredentialsProvider struct {
 	// user.MFADelivery (or use credentials.RequireMFA). MFAConfig.SendCode must be
 	// configured; MFAConfig.Enabled can stay false for selective MFA only.
 	Authorize func(ctx context.Context, credentials map[string]string, r *http.Request) (*OAuthUser, error)
+
+	// Register creates an account from the sign-up form and returns the new
+	// user, who is then signed in. Leave nil to disable sign-up for this
+	// provider. Return a *CredentialsError for a message the user should see
+	// (for example "That email is already registered").
+	Register func(ctx context.Context, fields map[string]string, r *http.Request) (*OAuthUser, error)
+
+	// RegisterFields are the sign-up form inputs. Default: Fields.
+	RegisterFields []CredentialField
+}
+
+// Input types (and default field names) used by credentials forms.
+const (
+	inputText     = "text"
+	inputEmail    = "email"
+	inputPassword = "password"
+	inputTel      = "tel"
+)
+
+// payloadType is the key that tells the callback page which flow finished.
+const payloadType = "type"
+
+// defaultCredentialFields is the form used when a provider declares none.
+var defaultCredentialFields = []CredentialField{
+	{Name: inputEmail, Label: "Email", Type: inputEmail, Placeholder: "you@example.com"},
+	{Name: inputPassword, Label: "Password", Type: inputPassword},
+}
+
+func (p *CredentialsProvider) signInFields() []CredentialField {
+	if len(p.Fields) > 0 {
+		return p.Fields
+	}
+	return defaultCredentialFields
+}
+
+func (p *CredentialsProvider) registerFields() []CredentialField {
+	if len(p.RegisterFields) > 0 {
+		return p.RegisterFields
+	}
+	return p.signInFields()
 }
 
 func (p *CredentialsProvider) ID() string         { return p.ProviderID }

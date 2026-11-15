@@ -230,3 +230,34 @@ if err != nil {
 }
 access, err := auth.RefreshAccessToken(claims, session)
 ```
+
+## Keeping the refresh token out of the browser
+
+By default the OAuth callback page passes both tokens to the browser, which stores them in `localStorage`. Anything stored there can be read by any script on the page, so a single XSS bug exposes a refresh token that lives for `RefreshTokenDuration` (1 year by default).
+
+Set `KeepRefreshTokenServerSide: true` to stop that:
+
+```go
+auth, err := goauth.New(&goauth.Config{
+	// ...
+	KeepRefreshTokenServerSide: true,
+})
+```
+
+With it on:
+
+- The callback page receives only the access token; `tokens.refresh_token` is `""`.
+- When a refresh request carries no refresh token, the refresh endpoint and `CheckSession` authenticate the HttpOnly session cookie instead and return a new access token. Send the request with `credentials: 'include'` and the opt-in header:
+
+```js
+const res = await fetch('/api/token/refresh', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { cft: '1' },
+});
+const accessToken = await res.json();
+```
+
+Requests that do send a refresh token (mobile apps, the token flow) work exactly as before. Revoking the session (sign-out) stops cookie refreshes immediately.
+
+Before turning it on, update any frontend code that reads `tokens.refresh_token` from `localStorage`: refresh with the cookie as shown above, and sign out with the session cookie instead of `Authorization: Bearer <refresh_token>`.

@@ -13,8 +13,8 @@ goauth gives you the building blocks for password sign-in:
 
 You write a small `POST /login` handler that ties them together. This keeps full control over your user table, validation, rate limiting and error messages.
 
-:::note[About the credentials provider]
-The `credentials` provider (see [Credentials provider](../providers/credentials.md)) lists a password form in `/providers` and enforces `POST` and CSRF on its sign-in endpoint. It does not call `Authorize` yet, so use the handler on this page for the actual sign-in.
+:::tip[Prefer the built-in endpoints]
+The `credentials` provider now handles sign-in and sign-up for you, with CSRF protection and a ready-made form. See [Sign-in page](./sign-in-page.md). The hand-written handlers below are still useful when you need full control.
 :::
 
 ## Password hashing

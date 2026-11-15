@@ -4,8 +4,8 @@ import (
 	"cmp"
 	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
-	"strings"
 )
 
 // GetProviders lists the configured providers with their sign-in and
@@ -66,7 +66,7 @@ func (a *Authorization) dispatch(w http.ResponseWriter, r *http.Request, oauth o
 	case *OAuthProvider:
 		oauth(w, r, p, origin, secure)
 	case *CredentialsProvider:
-		a.credentialsCallback(w, r, p, secure)
+		a.credentialsCallback(w, r, p)
 	case nil:
 		writeError(w, http.StatusNotFound, "Unknown provider: "+providerID)
 	default:
@@ -87,15 +87,20 @@ func (a *Authorization) startOAuth(w http.ResponseWriter, r *http.Request, p *OA
 	jar := a.jar(secure)
 	jar.expireOAuthFlowCookies(w)
 	if r.URL.Query().Get("connect") == "1" {
-		if err := a.SetFlowIntentCookie(w, r, FlowIntentConnect); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to set connect flow intent: "+err.Error())
+		resourceID, err := validateConnectResourceID(r.URL.Query().Get("resource_id"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if resourceID := strings.TrimSpace(r.URL.Query().Get("resource_id")); resourceID != "" {
-			if err := a.SetConnectResourceCookie(w, r, resourceID); err != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to set connect resource id: "+err.Error())
+		// A connect flow attaches provider tokens to the signed-in user, so it
+		// must start from an authenticated session.
+		if err := a.startConnectIntent(w, r, jar, resourceID); err != nil {
+			if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrSessionExpired) {
+				writeError(w, http.StatusUnauthorized, "Sign in before connecting an account")
 				return
 			}
+			writeError(w, http.StatusInternalServerError, "Failed to start connect flow")
+			return
 		}
 	} else {
 		expireCookie(w, jar.flowIntent()) // connectResource is already cleared above
@@ -131,20 +136,6 @@ func (a *Authorization) startOAuth(w http.ResponseWriter, r *http.Request, p *OA
 	a.redirectOrJSON(w, r, target)
 }
 
-func (a *Authorization) credentialsCallback(w http.ResponseWriter, r *http.Request, p Provider, secure bool) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "Credentials sign-in requires POST")
-		return
-	}
-	// Token-flow (mobile/API) clients are not cookie-based, so CSRF does not
-	// apply; cookie sign-in still requires the double-submit token.
-	if !a.wantsTokens(r) && !a.checkCSRF(r, secure) {
-		writeError(w, http.StatusForbidden, "Invalid CSRF token")
-		return
-	}
-	writeJSON(w, http.StatusOK, Map{"message": "Working credentialsCallback() for provider " + p.ID()})
-}
-
 func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p *OAuthProvider, origin string, secure bool) {
 	ctx := r.Context()
 	jar := a.jar(secure)
@@ -157,7 +148,15 @@ func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p 
 		a.renderCallbackError(w, "Provider missing Profile function")
 		return
 	}
-	if a.resolveUser == nil {
+	// Read the connect intent before anything else so the cookie is always
+	// cleared, and so a stale or forged connect attempt can never fall
+	// through into a sign-in.
+	intent, connectUser, isConnect, err := a.consumeConnectIntent(w, r, jar)
+	if err != nil {
+		a.renderCallbackError(w, err.Error())
+		return
+	}
+	if !isConnect && a.resolveUser == nil {
 		a.renderCallbackError(w, "ResolveUser() function is not set on Authorization object")
 		return
 	}
@@ -218,6 +217,15 @@ func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p 
 		Scope:             tokens.Scope,
 		ExpiresAt:         tokens.ExpiresAt(),
 	}
+	// A connect flow links the provider account to the user who started it
+	// (bound in the signed intent), not to whoever the provider profile would
+	// resolve to, so ResolveUser is not called and no user is created.
+	if isConnect {
+		account.UserID = connectUser.ID
+		a.completeProviderConnect(w, r, p, connectUser, account, intent.ResourceID)
+		return
+	}
+
 	if profile == nil {
 		profile = Profile{}
 	}
@@ -232,19 +240,13 @@ func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p 
 		a.renderCallbackError(w, "ResolveUser returned an invalid user")
 		return
 	}
-
-	if a.consumeFlowIntent(w, r, jar, FlowIntentConnect) {
-		account.UserID = resolvedUser.ID
-		a.completeProviderConnect(w, r, jar, p, resolvedUser, account)
-		return
-	}
 	a.completeSignIn(w, r, p, resolvedUser, account)
 }
 
-// completeProviderConnect finishes a connect flow; oauthCallback has already
-// validated user.
-func (a *Authorization) completeProviderConnect(w http.ResponseWriter, r *http.Request, jar *cookieJar, p *OAuthProvider, user *User, account *Account) {
-	resourceID := a.consumeConnectResourceCookie(w, r, jar)
+// completeProviderConnect finishes a connect flow for the signed-in user.
+// The provider tokens are handed only to OnProviderConnect; they are never
+// written into the callback page.
+func (a *Authorization) completeProviderConnect(w http.ResponseWriter, r *http.Request, p *OAuthProvider, user *User, account *Account, resourceID string) {
 	if resourceID != "" && a.onProviderConnect != nil {
 		if err := a.onProviderConnect(r.Context(), resourceID, account, user, p.ID()); err != nil {
 			a.renderCallbackError(w, "Failed to save provider connect content: "+err.Error())
@@ -254,10 +256,8 @@ func (a *Authorization) completeProviderConnect(w http.ResponseWriter, r *http.R
 	a.renderCallbackPage(w, Map{
 		"message":     cmp.Or(p.Name(), p.ID()) + " account connected successfully.",
 		"code":        "SUCCESS",
-		"user":        user,
-		"account":     account,
 		"provider":    p.ID(),
-		"type":        "connect",
+		payloadType:   "connect",
 		"resource_id": resourceID,
 	})
 }
@@ -274,8 +274,12 @@ func (a *Authorization) completeSignIn(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	a.SetSessionIDCookie(w, r, sessionID)
+	if a.keepRefreshTokenServerSide {
+		// The browser refreshes with the HttpOnly session cookie instead.
+		tokens.RefreshToken = ""
+	}
 	a.renderCallbackPage(w, Map{
-		"type":       "sign_in",
+		payloadType:  "sign_in",
 		"message":    "Successfully signed in with " + p.ID(),
 		"user":       FormatUser(user),
 		"tokens":     tokens,

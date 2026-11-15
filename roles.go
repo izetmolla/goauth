@@ -9,15 +9,30 @@ import (
 // GetRoles extracts the "roles" claim as a []string. Several encodings
 // are accepted because the claim crosses JSON, jwt and DB boundaries.
 func (a *Authorization) GetRoles(r *http.Request) ([]string, error) {
-	claims, err := a.GetClaims(r)
-	if err != nil {
-		return nil, err
+	p := principalFrom(r.Context())
+	if p == nil {
+		return nil, ErrMissingJWTContext
 	}
-	raw, ok := claims["roles"]
-	if !ok || raw == nil {
+	return p.Roles()
+}
+
+// rolesFromJSON decodes the raw "roles" claim. The common shape, an array
+// of strings, is decoded directly; anything else (null entries, a
+// JSON-encoded string) goes through rolesFromAny so every encoding the
+// claim has ever used is still accepted.
+func rolesFromJSON(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil, ErrInvalidRoles
 	}
-	return rolesFromAny(raw)
+	var grants []string
+	if err := json.Unmarshal(raw, &grants); err == nil {
+		return normalizeRoleGrants(grants), nil
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
+		return nil, ErrInvalidRoles
+	}
+	return rolesFromAny(v)
 }
 
 // GetRole checks authorization against endpoint role names and user role grants.

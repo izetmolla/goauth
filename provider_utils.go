@@ -11,11 +11,29 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
-// discoveryMu serializes OIDC discovery. Providers are shared by every request,
-// so filling in their endpoints must not race with concurrent readers.
-var discoveryMu sync.Mutex
+// discoveryState tracks OIDC discovery for one provider. Providers are shared
+// by every request, so filling in their endpoints must not race with
+// readers. After the first success, done short-circuits every later call
+// with a single atomic load: no lock, and one provider's slow issuer never
+// blocks sign-ins with another provider.
+type discoveryState struct {
+	mu   sync.Mutex
+	done atomic.Bool
+}
+
+// discoveries maps *OAuthProvider to its *discoveryState.
+var discoveries sync.Map
+
+func discoveryFor(p *OAuthProvider) *discoveryState {
+	if v, ok := discoveries.Load(p); ok {
+		return v.(*discoveryState)
+	}
+	v, _ := discoveries.LoadOrStore(p, &discoveryState{})
+	return v.(*discoveryState)
+}
 
 // origin resolves the external base URL and whether it is HTTPS, honoring
 // Config.AuthURL and request headers when AuthURL is unset.
@@ -78,12 +96,20 @@ func discover(ctx context.Context, p *OAuthProvider) error {
 	if p == nil {
 		return errors.New("oauth provider is required")
 	}
-	discoveryMu.Lock()
-	defer discoveryMu.Unlock()
 	if p.Issuer == "" {
 		return nil
 	}
+	st := discoveryFor(p)
+	if st.done.Load() {
+		return nil
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.done.Load() {
+		return nil
+	}
 	if p.AuthorizationURL != "" && p.TokenURL != "" {
+		st.done.Store(true)
 		return nil
 	}
 	wellKnown := strings.TrimRight(p.Issuer, "/") + "/.well-known/openid-configuration"
@@ -112,6 +138,8 @@ func discover(ctx context.Context, p *OAuthProvider) error {
 	if p.UserInfoURL == "" {
 		p.UserInfoURL = cfg.UserinfoEndpoint
 	}
+	// Publish the endpoints written above to lock-free readers.
+	st.done.Store(true)
 	return nil
 }
 

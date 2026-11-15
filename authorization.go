@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -38,6 +40,25 @@ type Config struct {
 	// OnProviderConnect persists extended OAuth scopes after a connect flow when
 	// resource_id was supplied on the authorization request.
 	OnProviderConnect func(ctx context.Context, resourceID string, account *Account, user *User, providerID string) error
+
+	// KeepRefreshTokenServerSide stops the OAuth callback page from handing
+	// the refresh token to the browser (where it would land in localStorage
+	// and be readable by any XSS). Web clients then refresh with the HttpOnly
+	// session cookie: the refresh endpoint and CheckSession accept it when the
+	// request carries no refresh token. Off by default for compatibility with
+	// frontends that read tokens.refresh_token from localStorage.
+	KeepRefreshTokenServerSide bool
+
+	// Endpoints switches individual built-in endpoints off. Every endpoint
+	// is enabled by default (the zero value).
+	Endpoints EndpointOptions
+
+	// UI brands the built-in pages and verification emails.
+	UI UIOptions
+
+	// Verification enables password reset, email confirmation and
+	// one-time-code sign-in. All are off by default.
+	Verification VerificationOptions
 }
 type Authorization struct {
 	JWTSecret            string
@@ -62,6 +83,18 @@ type Authorization struct {
 	cookies           CookieOptions
 	resolveUser       func(ctx context.Context, profile Profile) (*User, bool, error)
 	onProviderConnect func(ctx context.Context, resourceID string, account *Account, user *User, providerID string) error
+
+	keepRefreshTokenServerSide bool
+
+	endpoints EndpointOptions
+	ui        UIOptions
+	verify    *verification
+
+	// Resolved once in New so hot paths never re-parse configuration.
+	accessTTL  time.Duration
+	refreshTTL time.Duration
+	method     *jwt.SigningMethodHMAC
+	parser     *jwt.Parser
 }
 
 // New builds an Authorization from config. Optional ConfigFunc values are
@@ -84,11 +117,46 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		return nil, errors.New("db is required")
 	}
 
+	// Invalid durations or algorithms fail here, at startup, instead of on
+	// the first sign-in.
+	accessTTL, err := ParseCustomDuration(cfg.AccessTokenDuration, DefaultAccessTokenDuration)
+	if err != nil {
+		return nil, fmt.Errorf("invalid AccessTokenDuration: %w", err)
+	}
+	refreshTTL, err := ParseCustomDuration(cfg.RefreshTokenDuration, DefaultRefreshTokenDuration)
+	if err != nil {
+		return nil, fmt.Errorf("invalid RefreshTokenDuration: %w", err)
+	}
+	method, err := signingMethodFor(cmp.Or(cfg.SigningMethod, DefaultSigningMethodHMAC))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cfg.UI.validate(); err != nil {
+		return nil, err
+	}
+	verify, err := newVerification(cfg.Verification, cfg.JWTSecret)
+	if err != nil {
+		return nil, fmt.Errorf("verification: %w", err)
+	}
+	if cfg.Endpoints.DisablePages {
+		for _, f := range []verifyFeature{verify.reset, verify.confirm, verify.otp} {
+			if f.enabled && f.code.Delivery.hasLink() {
+				return nil, fmt.Errorf("verification: %s sends links, which open the built-in pages; use Delivery: goauth.DeliverCode when Endpoints.DisablePages is set", f.kind)
+			}
+		}
+	}
+
 	var cookies CookieOptions
 	if cfg.Cookies != nil {
 		cookies = *cfg.Cookies
 	}
 	return &Authorization{
+		accessTTL:  accessTTL,
+		refreshTTL: refreshTTL,
+		method:     method,
+		parser:     newJWTParser(method),
+
 		JWTSecret:            cfg.JWTSecret,
 		AuthURL:              cfg.AuthURL,
 		signingMethod:        cmp.Or(cfg.SigningMethod, DefaultSigningMethodHMAC),
@@ -106,6 +174,11 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		cookies:              cookies,
 		resolveUser:          cfg.ResolveUser,
 		onProviderConnect:    cfg.OnProviderConnect,
+
+		keepRefreshTokenServerSide: cfg.KeepRefreshTokenServerSide,
+		endpoints:                  cfg.Endpoints,
+		ui:                         cfg.UI,
+		verify:                     verify,
 	}, nil
 }
 

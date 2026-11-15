@@ -48,6 +48,10 @@ Every sign-in creates one row. Its columns match the `goauth.Session` struct:
 
 A session authenticates only while `is_deleted = false` and `expires_at` is in the future.
 
+If you enable password reset, email confirmation or one-time codes, also create the verification table with `auth.MigrateVerificationTokens(ctx)` (portable across databases) or the SQL in the [verification guide](../guides/verification.md#1-create-the-verification-table).
+
+Session lookups join `sessions.user_id` to `users.id` in a single query, so both columns must have the same type (both `uuid`, both `TEXT`, or both `CHAR(36)`, as in the schemas below).
+
 ## PostgreSQL
 
 PostgreSQL is the primary target: the `Session` model uses `uuid`, `jsonb` and `gen_random_uuid()`. You can let GORM create the sessions table:
@@ -102,7 +106,11 @@ CREATE INDEX IF NOT EXISTS idx_sessions_deleted_at ON sessions (deleted_at);
 
 ## SQLite
 
-SQLite has no `uuid`/`jsonb` types, so create the tables with plain SQL. Session ids are generated in Go (`Session.BeforeCreate`), so no database default is needed.
+SQLite has no `uuid`/`jsonb` types, so create the tables with plain SQL.
+
+:::tip[In-memory SQLite]
+With `:memory:`, every pooled connection gets its own empty database. goauth sends verification emails from a background goroutine, so a second connection can open at the same time. Use a named shared in-memory database instead, for example `file:goauth?mode=memory&cache=shared`.
+::: Session ids are generated in Go (`Session.BeforeCreate`), so no database default is needed.
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (

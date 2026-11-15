@@ -83,14 +83,24 @@ func main() {
 | `GET` | `{base}/providers` | `GetProviders` | JSON list of configured providers (Auth.js-compatible shape) |
 | `ANY` | `{base}/provider/{provider}` | `HandleSignIn` | Starts the sign-in flow (OAuth redirect, or credentials POST) |
 | `ANY` | `{base}/provider/{provider}/callback` | `HandleCallback` | OAuth/OIDC callback; validates state/PKCE/nonce, exchanges the code, resolves the user, creates the session, and renders the callback page |
+| `POST` | `{base}/provider/{provider}/register` | `HandleRegister` | Credentials sign-up (`CredentialsProvider.Register`), then signs the user in. **Off by default** (`Endpoints.EnableRegister`) |
+| `GET` | `{base}/csrf` | `GetCSRFToken` | CSRF token for custom credentials forms |
+| `GET` | `{base}/signin` | `SignInPage` | Built-in sign-in page (embedded HTML, CSS, JS) — see [Built-in pages](docs/docs/guides/sign-in-page.md) |
+| `GET` | `{base}/register`, `/forgot`, `/otp`, `/verify-email` | `RegisterPage`, … | Sign-up, forgot password, one-time code and verify-email pages. **Off by default** |
+| `POST` | `{base}/password/*`, `/otp/*`, `/verify-email*` | `HandleForgotPassword`, … | Password reset, one-time-code sign-in and email confirmation — see [Verification](docs/docs/guides/verification.md). **Off by default** |
+| `GET` | `{base}/assets/{file}` | — | The page's versioned CSS/JS |
 
-The three handlers are also exported individually (`auth.GetProviders`, `auth.HandleSignIn`, `auth.HandleCallback` — all `http.HandlerFunc` compatible) if you prefer to register routes yourself.
+Sign-in is on by default; sign-up (`Endpoints.EnableRegister`) and the verification features (`Config.Verification`) are off until you enable them. Switch built-in parts off with `Config.Endpoints` (`DisablePages`, `DisableCredentials`, `DisableCSRF`, `DisableProviders`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
+
+All SQL goes through GORM's builder with portable column types, tested against the PostgreSQL, MySQL, SQL Server and SQLite dialects.
+
+The handlers are also exported individually (all `http.HandlerFunc` compatible) if you prefer to register routes yourself.
 
 Useful query parameters on the sign-in endpoint:
 
 - `?json=true` (or header `X-Auth-Return-Redirect: 1` / `Accept: application/json`) — return the authorization URL as JSON instead of a 302 redirect
-- `?flow=token` (or header `X-Auth-Flow: token`) — token flow for mobile/API clients
-- `?connect=1&resource_id=<uuid>` — provider **connect** flow: link the OAuth account/scopes to an existing user; on completion the `Config.OnProviderConnect` callback runs
+- `?flow=token` (or header `X-Auth-Flow: token`) — token flow for mobile/API clients. For credentials sign-in only the header skips the CSRF check
+- `?connect=1&resource_id=<uuid>` — provider **connect** flow: link the OAuth account/scopes to the **signed-in** user (requires the WEB session cookie, otherwise `401`); on completion the `Config.OnProviderConnect` callback runs with that user
 
 ## Middlewares
 
@@ -146,7 +156,9 @@ goauth.New(&goauth.Config{
 
 	Providers:         []goauth.Provider{...},  // see providers/README.md
 	ResolveUser:       func(ctx, profile) (*goauth.User, bool, error) {...}, // required for OAuth
-	OnProviderConnect: func(ctx, resourceID, account, user, providerID) error {...}, // optional
+	OnProviderConnect: func(ctx, resourceID, account, user, providerID) error {...}, // optional; user = the signed-in user
+
+	KeepRefreshTokenServerSide: true, // recommended: refresh token never reaches browser JS; web clients refresh via the session cookie
 })
 ```
 

@@ -1,0 +1,452 @@
+/* goauth sign-in page. Everything is scoped under ga- classes and driven by
+ * custom properties, so UIOptions.AccentColor re-themes the whole page. */
+
+:root {
+  --ga-accent: #4f46e5;
+  --ga-on-accent: #fff;
+  --ga-bg: #f5f6f8;
+  --ga-card: rgba(255, 255, 255, 0.86);
+  --ga-card-solid: #fff;
+  --ga-text: #0b1220;
+  --ga-muted: #5a6377;
+  --ga-faint: #8a93a6;
+  --ga-border: rgba(15, 23, 42, 0.09);
+  --ga-border-strong: rgba(15, 23, 42, 0.16);
+  --ga-field: #fff;
+  --ga-hover: rgba(15, 23, 42, 0.035);
+  --ga-grid: rgba(15, 23, 42, 0.055);
+  --ga-danger: #b42318;
+  --ga-danger-bg: #fef3f2;
+  --ga-danger-border: #fecdca;
+  --ga-ok: #067647;
+  --ga-ok-bg: #ecfdf3;
+  --ga-ok-border: #abefc6;
+  --ga-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 32px -12px rgba(15, 23, 42, 0.18);
+  --ga-ring: color-mix(in oklab, var(--ga-accent) 28%, transparent);
+  --ga-link: var(--ga-accent);
+  --ga-pill: #fff;
+  --ga-radius: 18px;
+  --ga-radius-sm: 11px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ga-bg: #08090d;
+    --ga-card: rgba(19, 21, 29, 0.78);
+    --ga-card-solid: #13151d;
+    --ga-text: #f3f4f7;
+    --ga-muted: #a1a9b8;
+    --ga-faint: #6f7789;
+    --ga-border: rgba(255, 255, 255, 0.08);
+    --ga-border-strong: rgba(255, 255, 255, 0.16);
+    --ga-field: rgba(255, 255, 255, 0.03);
+    --ga-hover: rgba(255, 255, 255, 0.045);
+    --ga-grid: rgba(255, 255, 255, 0.045);
+    --ga-danger: #fda29b;
+    --ga-danger-bg: rgba(240, 68, 56, 0.1);
+    --ga-danger-border: rgba(240, 68, 56, 0.3);
+    --ga-ok: #47cd89;
+    --ga-ok-bg: rgba(23, 178, 106, 0.1);
+    --ga-ok-border: rgba(23, 178, 106, 0.3);
+    --ga-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 48px -16px rgba(0, 0, 0, 0.6);
+    --ga-link: color-mix(in oklab, var(--ga-accent) 55%, #fff);
+    --ga-pill: rgba(255, 255, 255, 0.09);
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ga-bg);
+  color: var(--ga-text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--ga-link); text-decoration: none; font-weight: 550; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--ga-accent); outline-offset: 2px; }
+
+/* --- Backdrop ------------------------------------------------------------ */
+
+.ga-backdrop { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+
+.ga-grid {
+  position: absolute; inset: -1px;
+  background-image:
+    linear-gradient(var(--ga-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ga-grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center center;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
+}
+
+.ga-glow {
+  position: absolute; left: 50%; top: 18%;
+  width: min(720px, 120vw); aspect-ratio: 1.6;
+  translate: -50% -50%;
+  background:
+    radial-gradient(closest-side, color-mix(in oklab, var(--ga-accent) 34%, transparent), transparent),
+    radial-gradient(closest-side at 70% 60%, color-mix(in oklab, var(--ga-accent) 18%, #22d3ee 10%), transparent);
+  filter: blur(40px);
+  opacity: 0.55;
+  animation: ga-float 14s ease-in-out infinite alternate;
+}
+
+@keyframes ga-float {
+  from { transform: translate3d(-4%, -2%, 0) scale(1); }
+  to   { transform: translate3d(4%, 3%, 0) scale(1.08); }
+}
+
+/* --- Layout -------------------------------------------------------------- */
+
+.ga-shell {
+  position: relative; z-index: 1;
+  min-height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 20px;
+  padding: max(40px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+}
+
+.ga-card {
+  width: min(100%, 408px);
+  padding: 32px 28px 26px;
+  background: var(--ga-card);
+  border: 1px solid var(--ga-border);
+  border-radius: var(--ga-radius);
+  box-shadow: var(--ga-shadow);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  animation: ga-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes ga-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Steps: one card, several states. Anything marked data-for="a b" is only
+ * shown while the card's data-step is a or b. */
+.ga-card[data-step="form"]    [data-for]:not([data-for~="form"]),
+.ga-card[data-step="request"] [data-for]:not([data-for~="request"]),
+.ga-card[data-step="code"]    [data-for]:not([data-for~="code"]),
+.ga-card[data-step="reset"]   [data-for]:not([data-for~="reset"]),
+.ga-card[data-step="link"]    [data-for]:not([data-for~="link"]),
+.ga-card[data-step="sent"]    [data-for]:not([data-for~="sent"]),
+.ga-card[data-step="done"]    [data-for]:not([data-for~="done"]) { display: none !important; }
+.ga-card.is-stepping { animation: ga-step 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes ga-step { from { opacity: 0.4; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* --- Header -------------------------------------------------------------- */
+
+.ga-head { text-align: center; margin-bottom: 22px; }
+
+.ga-mark, .ga-logo {
+  display: inline-grid; place-items: center;
+  width: 44px; height: 44px; margin-bottom: 14px;
+  border-radius: 12px;
+}
+.ga-logo { object-fit: contain; }
+.ga-mark {
+  color: var(--ga-on-accent);
+  background: linear-gradient(145deg, color-mix(in oklab, var(--ga-accent) 85%, #fff), var(--ga-accent));
+  box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--ga-accent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.ga-mark svg { width: 22px; height: 22px; }
+
+.ga-head h1 { margin: 0; font-size: 21px; line-height: 1.25; font-weight: 650; letter-spacing: -0.015em; }
+.ga-sub { margin: 6px 0 0; color: var(--ga-muted); font-size: 14px; }
+
+/* --- Alert --------------------------------------------------------------- */
+
+.ga-alert {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 0 0 18px; padding: 10px 12px;
+  color: var(--ga-danger); background: var(--ga-danger-bg);
+  border: 1px solid var(--ga-danger-border); border-radius: var(--ga-radius-sm);
+  font-size: 13.5px; line-height: 1.45;
+}
+.ga-alert svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+.ga-alert.is-shake { animation: ga-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
+@keyframes ga-shake {
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.ga-notice {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 0 0 18px; padding: 10px 12px;
+  color: var(--ga-ok); background: var(--ga-ok-bg);
+  border: 1px solid var(--ga-ok-border); border-radius: var(--ga-radius-sm);
+  font-size: 13.5px; line-height: 1.45;
+}
+.ga-notice svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+
+/* --- Tabs ---------------------------------------------------------------- */
+
+.ga-tabs {
+  position: relative;
+  display: grid; grid-template-columns: 1fr 1fr;
+  padding: 4px; margin-bottom: 20px;
+  background: var(--ga-hover);
+  border: 1px solid var(--ga-border);
+  border-radius: 12px;
+}
+.ga-tabs-pill {
+  position: absolute; top: 4px; bottom: 4px; left: 4px;
+  width: calc(50% - 4px);
+  background: var(--ga-pill);
+  border: 1px solid var(--ga-border);
+  border-radius: 9px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ga-card[data-page="register"] .ga-tabs-pill { transform: translateX(100%); }
+.ga-tab {
+  position: relative; z-index: 1;
+  padding: 7px 0; text-align: center;
+  color: var(--ga-muted); font-size: 14px; font-weight: 560;
+  border-radius: 9px;
+  transition: color 0.2s;
+}
+.ga-tab:hover { text-decoration: none; color: var(--ga-text); }
+.ga-tab[aria-current="page"] { color: var(--ga-text); }
+
+/* --- Provider buttons ---------------------------------------------------- */
+
+.ga-providers { display: grid; gap: 10px; }
+
+.ga-provider {
+  position: relative;
+  display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 12px;
+  min-height: 46px; padding: 0 14px;
+  color: var(--ga-text); font-weight: 560; font-size: 14.5px;
+  background: var(--ga-field);
+  border: 1px solid var(--ga-border-strong);
+  border-radius: var(--ga-radius-sm);
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.ga-provider:hover {
+  text-decoration: none;
+  background: var(--ga-hover);
+  border-color: color-mix(in oklab, var(--ga-accent) 35%, var(--ga-border-strong));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px -10px rgba(15, 23, 42, 0.35);
+}
+.ga-provider:active { transform: translateY(0) scale(0.99); }
+.ga-provider-icon { display: grid; place-items: center; width: 20px; height: 20px; }
+.ga-provider-icon svg { width: 20px; height: 20px; }
+.ga-provider-label { text-align: center; padding-right: 20px; }
+.ga-provider.is-last { border-color: color-mix(in oklab, var(--ga-accent) 55%, var(--ga-border-strong)); }
+
+.ga-monogram {
+  display: grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 6px;
+  font-size: 11px; font-weight: 700;
+  color: var(--ga-on-accent); background: var(--ga-accent);
+}
+
+.ga-badge {
+  position: absolute; right: 12px; top: 0; translate: 0 -50%;
+  padding: 1px 8px;
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.02em; line-height: 16px;
+  color: var(--ga-link);
+  background: var(--ga-card-solid);
+  border: 1px solid color-mix(in oklab, var(--ga-accent) 45%, var(--ga-border-strong));
+  border-radius: 999px;
+}
+
+/* --- Divider ------------------------------------------------------------- */
+
+.ga-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px 0;
+  color: var(--ga-faint); font-size: 12.5px;
+}
+.ga-divider::before, .ga-divider::after { content: ""; flex: 1; height: 1px; background: var(--ga-border); }
+
+/* --- Form ---------------------------------------------------------------- */
+
+.ga-form { display: grid; gap: 14px; }
+.ga-field { display: grid; gap: 6px; }
+.ga-field label { font-size: 13.5px; font-weight: 560; }
+
+.ga-input { position: relative; }
+.ga-input input {
+  width: 100%; height: 44px; padding: 0 13px;
+  color: var(--ga-text); font: inherit; font-size: 15px;
+  background: var(--ga-field);
+  border: 1px solid var(--ga-border-strong);
+  border-radius: var(--ga-radius-sm);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ga-input input::placeholder { color: var(--ga-faint); }
+.ga-input input:focus { border-color: var(--ga-accent); box-shadow: 0 0 0 4px var(--ga-ring); }
+.ga-input input[aria-invalid="true"] { border-color: var(--ga-danger); box-shadow: 0 0 0 4px color-mix(in oklab, var(--ga-danger) 18%, transparent); }
+.ga-input--password input { padding-right: 46px; }
+
+.ga-reveal {
+  position: absolute; right: 4px; top: 4px;
+  display: grid; place-items: center;
+  width: 36px; height: 36px; padding: 0;
+  color: var(--ga-faint);
+  background: none; border: 0; border-radius: 8px; cursor: pointer;
+}
+.ga-reveal:hover { color: var(--ga-text); background: var(--ga-hover); }
+.ga-reveal svg { width: 19px; height: 19px; }
+.ga-reveal .ga-eye-off, .ga-reveal[aria-pressed="true"] .ga-eye { display: none; }
+.ga-reveal[aria-pressed="true"] .ga-eye-off { display: block; }
+
+.ga-rules { display: grid; gap: 4px; margin: -4px 0 2px; padding: 0; list-style: none; font-size: 12.5px; color: var(--ga-faint); }
+.ga-rules li { display: flex; align-items: center; gap: 8px; transition: color 0.2s; }
+.ga-rules li::before {
+  content: ""; flex: none; width: 14px; height: 14px; border-radius: 50%;
+  border: 1.5px solid currentColor;
+  transition: background 0.2s, border-color 0.2s;
+}
+.ga-rules li.is-met { color: var(--ga-ok); }
+.ga-rules li.is-met::before {
+  border-color: var(--ga-ok);
+  background: var(--ga-ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M4 8.5l2.5 2.5L12 5.5'/%3E%3C/svg%3E") center / 10px no-repeat;
+}
+
+.ga-submit {
+  position: relative;
+  display: grid; place-items: center;
+  height: 44px; margin-top: 4px;
+  color: var(--ga-on-accent); font: inherit; font-weight: 600; font-size: 15px;
+  background: var(--ga-accent);
+  border: 0; border-radius: var(--ga-radius-sm);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 8px 18px -10px color-mix(in oklab, var(--ga-accent) 85%, transparent);
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+.ga-submit:hover { filter: brightness(1.08); }
+.ga-submit:active { transform: scale(0.985); }
+.ga-submit:focus-visible { outline-offset: 3px; }
+
+.ga-submit--link { display: grid; color: var(--ga-on-accent); text-decoration: none !important; }
+
+.ga-aux { display: flex; justify-content: flex-end; margin-top: -6px; font-size: 13px; }
+.ga-aux a { font-weight: 550; }
+
+.ga-secondary {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; margin-top: 12px;
+  color: var(--ga-text); font-weight: 560; font-size: 14.5px;
+  background: transparent;
+  border: 1px dashed var(--ga-border-strong);
+  border-radius: var(--ga-radius-sm);
+  transition: background 0.15s, border-color 0.15s;
+}
+.ga-secondary svg { width: 18px; height: 18px; color: var(--ga-muted); }
+.ga-secondary:hover { text-decoration: none; background: var(--ga-hover); border-color: color-mix(in oklab, var(--ga-accent) 45%, var(--ga-border-strong)); }
+
+/* Code entry: one real input, drawn as separate boxes by goauth.js. */
+.ga-code {
+  width: 100%; height: 52px; padding: 0 14px;
+  font: 600 24px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  letter-spacing: 0.4em; text-align: center; text-transform: uppercase;
+  color: var(--ga-text); background: var(--ga-field);
+  border: 1px solid var(--ga-border-strong); border-radius: var(--ga-radius-sm);
+  outline: none;
+}
+.ga-code:focus { border-color: var(--ga-accent); box-shadow: 0 0 0 4px var(--ga-ring); }
+.ga-otp { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.ga-otp .ga-code {
+  position: absolute; inset: 0; z-index: 2;
+  opacity: 0; caret-color: transparent; color: transparent; letter-spacing: 0;
+}
+.ga-otp-box {
+  display: grid; place-items: center;
+  height: 54px; min-width: 0;
+  font: 650 24px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  background: var(--ga-field);
+  border: 1px solid var(--ga-border-strong); border-radius: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.ga-otp-box.is-filled { border-color: color-mix(in oklab, var(--ga-accent) 45%, var(--ga-border-strong)); animation: ga-pop 0.18s ease-out; }
+.ga-otp-box.is-active { border-color: var(--ga-accent); box-shadow: 0 0 0 4px var(--ga-ring); }
+.ga-otp-box.is-active:empty::after { content: ""; width: 2px; height: 26px; background: var(--ga-accent); animation: ga-blink 1s steps(1) infinite; }
+.ga-otp[aria-invalid="true"] .ga-otp-box { border-color: var(--ga-danger); }
+@keyframes ga-pop { from { transform: scale(0.92); } to { transform: none; } }
+@keyframes ga-blink { 50% { opacity: 0; } }
+
+.ga-panel { display: grid; justify-items: center; gap: 6px; margin: 4px 0 6px; text-align: center; }
+.ga-panel p { margin: 0; color: var(--ga-muted); font-size: 14.5px; }
+.ga-panel strong { color: var(--ga-text); }
+.ga-panel .ga-hint { font-size: 13px; color: var(--ga-faint); }
+.ga-panel-icon {
+  display: grid; place-items: center;
+  width: 56px; height: 56px; margin-bottom: 8px;
+  color: var(--ga-link);
+  background: color-mix(in oklab, var(--ga-accent) 12%, transparent);
+  border-radius: 50%;
+  animation: ga-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ga-panel-icon svg { width: 26px; height: 26px; }
+.ga-panel--ok .ga-panel-icon { color: var(--ga-ok); background: var(--ga-ok-bg); }
+.ga-panel--ok .ga-submit--link { width: 100%; margin-top: 14px; }
+
+.ga-resend { display: block; }
+.ga-resend-row { margin: 14px 0 0; text-align: center; font-size: 13.5px; color: var(--ga-muted); }
+.ga-link-btn {
+  padding: 0; font: inherit; font-weight: 600; color: var(--ga-link);
+  background: none; border: 0; cursor: pointer;
+}
+.ga-link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ga-link-btn:disabled { color: var(--ga-faint); cursor: default; text-decoration: none; }
+
+.ga-back { display: inline-flex; align-items: center; gap: 4px; color: var(--ga-muted); }
+.ga-back svg { width: 16px; height: 16px; }
+.ga-back:hover { color: var(--ga-text); }
+
+/* --- Loading ------------------------------------------------------------- */
+
+.ga-spinner {
+  display: none;
+  width: 18px; height: 18px;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%;
+  animation: ga-spin 0.7s linear infinite;
+}
+.ga-submit .ga-spinner { position: absolute; }
+.ga-provider .ga-spinner { position: absolute; right: 14px; top: 50%; margin-top: -9px; color: var(--ga-faint); }
+.is-loading .ga-spinner { display: block; }
+.is-loading .ga-submit-label, .ga-provider.is-loading .ga-badge { visibility: hidden; }
+.is-loading { pointer-events: none; }
+.ga-submit.is-loading { filter: saturate(0.85); }
+
+@keyframes ga-spin { to { transform: rotate(360deg); } }
+
+/* --- Footer -------------------------------------------------------------- */
+
+.ga-switch { margin: 18px 0 0; text-align: center; font-size: 14px; color: var(--ga-muted); }
+.ga-legal { margin: 18px 0 0; text-align: center; font-size: 12.5px; color: var(--ga-faint); }
+.ga-legal a { color: inherit; text-decoration: underline; text-underline-offset: 2px; font-weight: 500; }
+.ga-empty { margin: 4px 0; text-align: center; color: var(--ga-muted); }
+
+.ga-foot {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; color: var(--ga-faint); font-size: 12.5px;
+}
+.ga-foot svg { width: 14px; height: 14px; }
+
+@media (max-width: 440px) {
+  .ga-card { padding: 26px 18px 22px; border-radius: 16px; }
+  .ga-head h1 { font-size: 19px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

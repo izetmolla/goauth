@@ -1,0 +1,26 @@
+{{define "title"}}Create account{{end}}
+{{define "heading"}}<span data-for="form">{{if .AppName}}Join {{.AppName}}{{else}}Create your account{{end}}</span><span data-for="sent">Check your inbox</span>{{end}}
+{{define "sub"}}<span data-for="form">It only takes a minute.</span><span data-for="sent">One last step to activate your account.</span>{{end}}
+{{define "content"}}
+    <div data-for="form">
+    {{- template "tabs" .}}
+    {{- template "oauth" .}}
+    {{- if .OAuth}}
+    <div class="ga-divider" role="separator"><span>or sign up with email</span></div>
+    {{- end}}
+    {{- with .Credentials}}
+    <form class="ga-form" id="ga-form-register" method="post" action="{{.Action}}" data-provider="{{.ID}}" novalidate>
+      {{- template "hidden" $}}
+      {{- range .Fields}}
+      {{- template "field" .}}
+      {{- if .IsPassword}}{{template "rules"}}{{end}}
+      {{- end}}
+      {{template "submit" "Create account"}}
+    </form>
+    {{- end}}
+    <p class="ga-switch">Already have an account? <a href="{{.Links.SignIn}}">Sign in</a></p>
+    </div>
+    {{- template "sent" .}}
+    {{- if .Links.Verify}}{{template "resend" .}}{{end}}
+    <div data-for="sent">{{template "back" .}}</div>
+{{end}}

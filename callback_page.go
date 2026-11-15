@@ -22,7 +22,8 @@ func (a *Authorization) renderCallbackPage(w http.ResponseWriter, data any) {
 	var buf bytes.Buffer
 	if err := callbackPageTemplate.Execute(&buf, map[string]any{
 		"title":         "Signing in…",
-		"globalOptions": template.HTML(`<script id="__GLOBAL_DATA__" type="application/json">` + string(jsonData) + `</script>`),
+		"globalOptions": template.HTML(`<script id="__GLOBAL_DATA__" type="application/json">` + string(jsonData) + `</script>`), //nolint:gosec // json.Marshal escapes <, > and &
+		"sessionJS":     sessionJS,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -35,7 +36,7 @@ func (a *Authorization) renderCallbackPage(w http.ResponseWriter, data any) {
 
 // renderCallbackError renders the callback page in its error state.
 func (a *Authorization) renderCallbackError(w http.ResponseWriter, message string) {
-	a.renderCallbackPage(w, Map{"message": message, "code": codeError})
+	a.renderCallbackPage(w, Map{"message": message, "code": codeError, "signin_url": a.signInPagePath()})
 }
 
 var callbackPageTemplate = template.Must(template.New("callback").Parse(tokenCallbackHTML))
@@ -116,7 +117,7 @@ function redirectTo(url) {
 
 if (backToSignInEl) {
 	backToSignInEl.addEventListener('click', function () {
-		redirectTo('/sign-in');
+		redirectTo(globalOptions.signin_url || '/sign-in');
 	});
 }
 
@@ -142,61 +143,16 @@ function showSuccess(message, options) {
 	if (closeTabEl) closeTabEl.hidden = !opts.showCloseTab;
 }
 
-const AUTH_STORAGE_KEY = 'authorization-storage';
+{{.sessionJS}}
 
-function resolveSessionId(user, sessionId) {
-	if (sessionId) return sessionId;
-	if (user && user.id) return user.id;
-	if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-	return 'session-' + Date.now();
-}
-
-function parsePersistedSnapshot(raw) {
-	if (!raw) return null;
-	try {
-		const parsed = JSON.parse(raw);
-		if (parsed && typeof parsed === 'object' && parsed.state && typeof parsed.state === 'object') {
-			return parsed.state;
-		}
-		if (parsed && typeof parsed === 'object' && Array.isArray(parsed.sessions)) {
-			return parsed;
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
-
-function persistSignIn({ session_id, user, tokens, trusted }) {
-	const existing = parsePersistedSnapshot(localStorage.getItem(AUTH_STORAGE_KEY)) || {
-		sessions: [],
-		current_session: '',
-		redirectUrl: ''
-	};
-	const id = resolveSessionId(user, session_id);
-	const sessions = [
-		...existing.sessions.filter(function (session) { return session.session_id !== id; }),
-		{
-			session_id: id,
-			user: { id: user.id, ...user },
-			tokens: {
-				access_token: tokens.access_token,
-				refresh_token: tokens.refresh_token
-			},
-			trusted: Boolean(trusted)
-		}
-	];
-	const snapshot = {
-		sessions: sessions,
-		current_session: id,
-		redirectUrl: existing.redirectUrl || ''
-	};
-	localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(snapshot));
-	return snapshot;
+function persistSignIn(data) {
+	return GoAuthSession.persist(data);
 }
 
 function finishSignIn(snapshot, message) {
-	const redirectTarget = snapshot.redirectUrl || '/';
+	// redirect_url is set by the server (already validated as same-origin)
+	// for credentials sign-ins; OAuth sign-ins use the stored redirectUrl.
+	const redirectTarget = globalOptions.redirect_url || snapshot.redirectUrl || '/';
 	const successMessage = message || 'Signed in successfully. Redirecting…';
 
 	showSuccess(successMessage);

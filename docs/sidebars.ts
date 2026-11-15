@@ -22,6 +22,8 @@ const sidebars: SidebarsConfig = {
       items: [
         'guides/configuration',
         'guides/endpoints',
+        'guides/sign-in-page',
+        'guides/verification',
         'guides/oauth-sign-in',
         'guides/protecting-api-routes',
         'guides/protecting-web-pages',

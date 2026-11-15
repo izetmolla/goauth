@@ -1,0 +1,196 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>{{template "title" .}}{{if .AppName}} · {{.AppName}}{{end}}</title>
+<link rel="stylesheet" href="{{.CSSURL}}">
+{{- if .AccentColor}}
+<style nonce="{{.Nonce}}">:root{--ga-accent:{{.AccentColor}}}</style>
+{{- end}}
+<script src="{{.SessionJSURL}}" defer></script>
+<script src="{{.JSURL}}" defer></script>
+</head>
+<body>
+<div class="ga-backdrop" aria-hidden="true"><div class="ga-grid"></div><div class="ga-glow"></div></div>
+
+<main class="ga-shell">
+  <section class="ga-card" id="ga-card" data-page="{{.Page}}" data-step="{{.Step}}" data-redirect="{{.Redirect}}"
+           data-resend-after="{{.Code.ResendAfter}}" data-signin="{{.Links.SignIn}}" aria-labelledby="ga-title">
+    <header class="ga-head">
+      {{- template "logo" .}}
+      <h1 id="ga-title">{{template "heading" .}}</h1>
+      <p class="ga-sub">{{template "sub" .}}</p>
+    </header>
+
+    <div class="ga-alert" id="ga-error" role="alert" aria-live="assertive"{{if not .Error}} hidden{{end}}>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 4a1 1 0 0 1 1 1v3.5a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Zm0 8.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></svg>
+      <span id="ga-error-text">{{.Error}}</span>
+    </div>
+    <div class="ga-notice" id="ga-notice" role="status" aria-live="polite" hidden>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm3.7 6.2-4.2 4.6a1 1 0 0 1-1.46.03l-2-2a1 1 0 1 1 1.42-1.42l1.26 1.27 3.5-3.83a1 1 0 0 1 1.48 1.35Z"/></svg>
+      <span id="ga-notice-text"></span>
+    </div>
+
+    {{template "content" .}}
+
+    {{- if or .TermsURL .PrivacyURL}}
+    <p class="ga-legal">By continuing you agree to the
+      {{- if .TermsURL}} <a href="{{.TermsURL}}" target="_blank" rel="noopener">Terms</a>{{end}}
+      {{- if and .TermsURL .PrivacyURL}} and{{end}}
+      {{- if .PrivacyURL}} <a href="{{.PrivacyURL}}" target="_blank" rel="noopener">Privacy Policy</a>{{end}}.
+    </p>
+    {{- end}}
+  </section>
+  <p class="ga-foot"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/></svg>Secured by goauth</p>
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "logo"}}
+      {{- if .LogoURL}}
+      <img class="ga-logo" src="{{.LogoURL}}" alt="{{.AppName}}" width="44" height="44">
+      {{- else}}
+      <div class="ga-mark" aria-hidden="true">{{template "icon" .Page}}</div>
+      {{- end}}
+{{- end}}
+
+{{define "icon"}}
+  {{- if eq . "otp" -}}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg>
+  {{- else if eq . "forgot" -}}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4M17 6l2 2M14 9l2 2"/></svg>
+  {{- else if eq . "verify" -}}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M15.5 17.5l2 2 3.5-4" stroke-width="2.2"/></svg>
+  {{- else if eq . "register" -}}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M3 20a7 7 0 0 1 11.5-5.4M18 15v6M15 18h6"/></svg>
+  {{- else -}}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.4" fill="currentColor" stroke="none"/></svg>
+  {{- end -}}
+{{end}}
+
+{{/* Hidden fields every form posts. */}}
+{{define "hidden"}}
+      <input type="hidden" name="csrfToken" value="{{.CSRFToken}}">
+      <input type="hidden" name="redirectUrl" value="{{.Redirect}}">
+{{- end}}
+
+{{define "tabs"}}
+    {{- if .Links.Register}}
+    <nav class="ga-tabs" aria-label="Sign in or create an account">
+      <span class="ga-tabs-pill" aria-hidden="true"></span>
+      <a class="ga-tab" href="{{.Links.SignIn}}"{{if eq .Page "signin"}} aria-current="page"{{end}}>Sign in</a>
+      <a class="ga-tab" href="{{.Links.Register}}"{{if eq .Page "register"}} aria-current="page"{{end}}>Sign up</a>
+    </nav>
+    {{- end}}
+{{- end}}
+
+{{define "oauth"}}
+    {{- if .OAuth}}
+    <div class="ga-providers" role="list">
+      {{- range .OAuth}}
+      <a class="ga-provider" role="listitem" href="{{.URL}}" data-provider="{{.ID}}">
+        <span class="ga-provider-icon">{{.Icon}}</span>
+        <span class="ga-provider-label">Continue with {{.Name}}</span>
+        <span class="ga-badge" hidden>Last used</span>
+        <span class="ga-spinner" aria-hidden="true"></span>
+      </a>
+      {{- end}}
+    </div>
+    {{- end}}
+{{- end}}
+
+{{define "field"}}
+      <div class="ga-field">
+        <label for="{{.ID}}">{{.Label}}</label>
+        <div class="ga-input{{if .IsPassword}} ga-input--password{{end}}">
+          <input id="{{.ID}}" name="{{.Name}}" type="{{.Type}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}} autocomplete="{{.Autocomplete}}" required{{if eq .Type "email"}} inputmode="email" autocapitalize="none" spellcheck="false"{{end}}>
+          {{- if .IsPassword}}{{template "reveal"}}{{end}}
+        </div>
+      </div>
+{{- end}}
+
+{{define "email"}}
+      <div class="ga-field">
+        <label for="ga-email">Email</label>
+        <div class="ga-input">
+          <input id="ga-email" name="email" type="email" value="{{.Email}}" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required>
+        </div>
+      </div>
+{{- end}}
+
+{{define "reveal"}}
+          <button class="ga-reveal" type="button" aria-label="Show password" aria-pressed="false">
+            <svg class="ga-eye" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="ga-eye-off" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.2 6.2C3.6 8 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.8-1.9M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>
+          </button>
+{{- end}}
+
+{{/* A "new password" input with live strength hints. */}}
+{{define "newpassword"}}
+      <div class="ga-field">
+        <label for="ga-new-password-{{.}}">New password</label>
+        <div class="ga-input ga-input--password">
+          <input id="ga-new-password-{{.}}" name="password" type="password" autocomplete="new-password" required>
+          {{- template "reveal"}}
+        </div>
+      </div>
+      {{- template "rules"}}
+{{- end}}
+
+{{define "rules"}}
+      <ul class="ga-rules" aria-label="Password strength">
+        <li data-rule="length">At least 8 characters</li>
+        <li data-rule="number">Contains a number</li>
+        <li data-rule="mixed">Upper &amp; lower case, or a symbol</li>
+      </ul>
+{{- end}}
+
+{{define "code"}}
+      <div class="ga-field">
+        <label for="ga-code">{{if .Code.Numeric}}{{.Code.Length}}-digit code{{else}}{{.Code.Length}}-character code{{end}}</label>
+        <input class="ga-code" id="ga-code" name="code" type="text" inputmode="{{if .Code.Numeric}}numeric{{else}}text{{end}}"
+               autocomplete="one-time-code" maxlength="{{.Code.Length}}" data-length="{{.Code.Length}}"
+               autocapitalize="characters" spellcheck="false" required>
+      </div>
+{{- end}}
+
+{{/* The "check your inbox" panel with a resend button. */}}
+{{define "sent"}}
+    <div class="ga-panel" data-for="sent">
+      <div class="ga-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 7l9 6 9-6"/></svg></div>
+      <p>We sent an email to <strong data-ga-email>{{.Email}}</strong>. Open it and follow the link to continue.</p>
+      <p class="ga-hint">Can't find it? Check your spam folder.</p>
+    </div>
+{{- end}}
+
+{{define "resend"}}
+    <form class="ga-form ga-resend" method="post" action="{{.ResendAction}}" data-for="code sent" novalidate>
+      {{- template "hidden" .}}
+      <input type="hidden" name="email" value="{{.Email}}" data-ga-email-input>
+      <p class="ga-resend-row">Didn't get it? <button class="ga-link-btn" type="submit" data-resend>Resend email</button></p>
+    </form>
+{{- end}}
+
+{{define "done"}}
+    <div class="ga-panel ga-panel--ok" data-for="done">
+      <div class="ga-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <p id="ga-done-text">{{template "donetext" .}}</p>
+      <a class="ga-submit ga-submit--link" href="{{.Links.SignIn}}?redirectUrl={{.Redirect}}">Continue to sign in</a>
+    </div>
+{{- end}}
+
+{{define "back"}}
+    <p class="ga-switch"><a href="{{.Links.SignIn}}" class="ga-back"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5l-5 5 5 5"/></svg>Back to sign in</a></p>
+{{- end}}
+
+{{define "different"}}
+    <p class="ga-switch" data-for="code sent"><a href="?step=request" data-step-link="request">Use a different email</a></p>
+{{- end}}
+
+{{define "submit"}}<button class="ga-submit" type="submit"><span class="ga-submit-label">{{.}}</span><span class="ga-spinner" aria-hidden="true"></span></button>{{end}}
+{{define "donetext"}}{{end}}

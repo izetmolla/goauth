@@ -1,12 +1,8 @@
 package goauth
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // CheckSessionResult mirrors a successful sign-in payload without creating a session.
@@ -32,26 +28,6 @@ func (a *Authorization) CheckSession(w http.ResponseWriter, r *http.Request) (*C
 		SessionID: session.ID,
 		UserID:    session.UserID,
 	}, nil
-}
-
-func (a *Authorization) ensureSessionActive(ctx context.Context, sessionID string) error {
-	if a.db == nil {
-		return errors.New("db manager is not initialized")
-	}
-
-	var session Session
-	err := a.db.WithContext(ctx).
-		Table(a.sessionsTable()).
-		Where("id = ? AND is_deleted = ?", sessionID, false).
-		First(&session).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrSessionNotFound
-		}
-		return err
-	}
-
-	return sessionUsable(&session)
 }
 
 // sessionUsable reports whether a loaded session row may still authenticate

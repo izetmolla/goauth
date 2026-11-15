@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -46,11 +47,14 @@ type Session struct {
 	DeletedAt gorm.DeletedAt `json:"deleted_at" gorm:"index"`
 }
 
-// BeforeCreate sets a UUID for the user before creation.
-// This ensures consistent ID generation across different database systems.
+// BeforeCreate sets the session id before creation, so ids are generated
+// the same way on every database. The id is a bearer secret (it is the WEB
+// session cookie value), so it is always a random version 4 UUID (122
+// random bits) and never a time-ordered v7, which would leak the creation
+// time and carry less entropy.
 func (s *Session) BeforeCreate(*gorm.DB) error {
 	if s.ID == "" {
-		s.ID = uuid.New().String()
+		s.ID = uuid.NewV4().String()
 	}
 	return nil
 }
@@ -77,53 +81,18 @@ func (a *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) 
 	if sessionID == "" {
 		return nil, errors.New("session ID cannot be empty")
 	}
-	if a.redis != nil {
-		session, err := a.GetSessionFromRedis(ctx, sessionID)
-		if err == nil {
-			if activeErr := a.ensureSessionActive(ctx, sessionID); activeErr != nil {
-				return nil, activeErr
-			}
-			roles := session.Roles
-			if fresh, err := a.getUserRolesFromDB(ctx, session.UserID); err == nil && len(fresh) > 0 {
-				roles = fresh
-				_ = a.SetSessionToRedis(ctx, &SessionData{
-					ID:     session.ID,
-					UserID: session.UserID,
-					Roles:  roles,
-				})
-			}
-			return &Session{
-				ID:     session.ID,
-				UserID: session.UserID,
-				User: User{
-					ID:    session.UserID,
-					Roles: roles,
-				},
-			}, nil
+	// The database is the source of truth for every lookup: a signed-out or
+	// expired session, a deleted user, or a revoked role must take effect on
+	// the very next request. Reading Redis first could not skip that query,
+	// so the lookup goes straight to the database and Redis is kept as a
+	// write-through copy for anything that reads it.
+	session, err := a.loadSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrSessionExpired) {
+			a.deleteSessionFromRedis(ctx, sessionID)
 		}
-	}
-	var session Session
-	if err := a.db.
-		WithContext(ctx).
-		Table(a.sessionsTable()).
-		Where("id = ? AND is_deleted = ?", sessionID, false).
-		First(&session).Error; err != nil {
 		return nil, err
 	}
-	// The Redis path validates liveness via ensureSessionActive; the DB
-	// fallback must apply the same rules or logged-out/expired sessions
-	// keep authenticating.
-	if err := sessionUsable(&session); err != nil {
-		return nil, err
-	}
-	if err := a.db.WithContext(ctx).
-		Table(a.userTableName).
-		Select("id", "roles").
-		Where("id = ?", session.UserID).
-		First(&session.User).Error; err != nil {
-		return nil, err
-	}
-
 	if a.redis != nil {
 		_ = a.SetSessionToRedis(ctx, &SessionData{
 			ID:     session.ID,
@@ -131,7 +100,69 @@ func (a *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) 
 			Roles:  session.User.Roles,
 		})
 	}
+	return session, nil
+}
+
+// sessionRow is a session row joined with its user's id and roles.
+type sessionRow struct {
+	Session   `gorm:"embedded"`
+	JoinedID  *string    `gorm:"column:goauth_user_id"`
+	JoinedRls JSONBArray `gorm:"column:goauth_user_roles"`
+}
+
+// loadSession fetches a session and its user's roles in one round trip. A
+// missing, signed-out or expired session, or a session whose user no longer
+// exists, yields ErrSessionNotFound / ErrSessionExpired.
+func (a *Authorization) loadSession(ctx context.Context, sessionID string) (*Session, error) {
+	var row sessionRow
+	// Portable across GORM drivers (PostgreSQL, MySQL, SQLite, SQL Server,
+	// Oracle): table aliases are written without AS (Oracle rejects it),
+	// identifiers are quoted by the active dialect, row limiting is left to
+	// Take, and expiry is checked in Go rather than with database time
+	// functions.
+	err := a.db.WithContext(ctx).
+		Unscoped(). // soft-delete filter is written out below, against the alias
+		Table(a.quoteIdent(a.sessionsTable())+" s").
+		Select("s.*, u.id AS goauth_user_id, u.roles AS goauth_user_roles").
+		Joins("LEFT JOIN "+a.quoteIdent(a.userTableName)+" u ON u.id = s.user_id").
+		Where("s.id = ? AND s.is_deleted = ? AND s.deleted_at IS NULL", sessionID, false).
+		// An explicit, qualified order: SQL Server needs one for its
+		// OFFSET/FETCH row limit, and GORM's default ("id") would be
+		// ambiguous between the two joined tables.
+		Order("s.id").
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrSessionNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := sessionUsable(&row.Session); err != nil {
+		return nil, err
+	}
+	if row.JoinedID == nil {
+		return nil, ErrSessionNotFound // the user was deleted
+	}
+	session := row.Session
+	session.User = User{ID: *row.JoinedID, Roles: row.JoinedRls}
 	return &session, nil
+}
+
+// quoteIdent quotes a configured table name for the active dialect, so
+// names such as "user" (reserved in PostgreSQL) still work in raw SQL.
+func (a *Authorization) quoteIdent(name string) string {
+	var b strings.Builder
+	a.db.QuoteTo(&b, name)
+	return b.String()
+}
+
+// deleteSessionFromRedis drops a session's cache entry. Failures are ignored:
+// the database check on the next request still rejects the session.
+func (a *Authorization) deleteSessionFromRedis(ctx context.Context, sessionID string) {
+	if a == nil || a.redis == nil || sessionID == "" {
+		return
+	}
+	_ = a.redis.Del(ctx, buildRedisKey(a.redisPrefix, sessionID)).Err()
 }
 
 // GetSessionFromRedis retrieves session data from Redis cache.
@@ -203,7 +234,7 @@ func (a *Authorization) CreateSession(o *AuthorizeOptions) (string, error) {
 		return "", errors.New("authorize options are required")
 	}
 
-	refreshTokenDuration, err := ParseCustomDuration(a.refreshTokenDuration, DefaultRefreshTokenDuration)
+	refreshTokenDuration, err := a.refreshTokenTTL()
 	if err != nil {
 		return "", fmt.Errorf("parse refresh token duration: %w", err)
 	}
@@ -270,7 +301,7 @@ func (a *Authorization) SetSessionIDCookie(w http.ResponseWriter, r *http.Reques
 // regardless of scheme.
 func (a *Authorization) sessionCookie(secure bool) CookieOption {
 	maxAge := 365 * 24 * time.Hour
-	if d, err := ParseCustomDuration(a.refreshTokenDuration, DefaultRefreshTokenDuration); err == nil {
+	if d, err := a.refreshTokenTTL(); err == nil {
 		maxAge = d
 	}
 	jar := a.jar(secure)

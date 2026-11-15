@@ -1,0 +1,34 @@
+{{define "title"}}Sign in{{end}}
+{{define "heading"}}{{if .AppName}}Sign in to {{.AppName}}{{else}}Welcome back{{end}}{{end}}
+{{define "sub"}}Choose how you'd like to continue.{{end}}
+{{define "content"}}
+    {{- template "tabs" .}}
+    {{- template "oauth" .}}
+    {{- if and .OAuth (or .Credentials .Links.OTP)}}
+    <div class="ga-divider" role="separator"><span>or continue with email</span></div>
+    {{- end}}
+    {{- with .Credentials}}
+    <form class="ga-form" id="ga-form-signin" method="post" action="{{.Action}}" data-provider="{{.ID}}" novalidate>
+      {{- template "hidden" $}}
+      {{- range .Fields}}
+      {{- template "field" .}}
+      {{- if and .IsPassword $.Links.Forgot}}
+      <div class="ga-aux"><a href="{{$.Links.Forgot}}" data-carry-email>Forgot password?</a></div>
+      {{- end}}
+      {{- end}}
+      {{template "submit" "Sign in"}}
+    </form>
+    {{- end}}
+    {{- if .Links.OTP}}
+    <a class="ga-secondary" href="{{.Links.OTP}}?redirectUrl={{.Redirect}}" data-carry-email>
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 7l9 6 9-6"/></svg>
+      Email me a sign-in code
+    </a>
+    {{- end}}
+    {{- if .Links.Register}}
+    <p class="ga-switch">New here? <a href="{{.Links.Register}}">Create an account</a></p>
+    {{- end}}
+    {{- if not (or .OAuth .Credentials .Links.OTP)}}
+    <p class="ga-empty">No sign-in methods are configured yet.</p>
+    {{- end}}
+{{end}}

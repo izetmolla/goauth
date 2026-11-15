@@ -1,0 +1,16 @@
+{{define "subject"}}{{if .Code}}{{.Code}} is your {{.AppName}} sign-in code{{else}}Sign in to {{.AppName}}{{end}}{{end}}
+{{define "preheader"}}{{if .Code}}Enter {{.Code}} to sign in. {{end}}It expires in {{.ExpiresIn}}.{{end}}
+{{define "text"}}Sign in to {{.AppName}}
+{{if .Code}}
+Your sign-in code: {{.Code}}
+{{end}}{{if .Link}}
+Or sign in with this link: {{.Link}}
+{{end}}
+This expires in {{.ExpiresIn}} and works once. If you didn't try to sign in, ignore this email.
+{{end}}
+{{define "html"}}
+<h1 style="margin:0 0 8px;font-size:20px;line-height:1.3;">Your sign-in code</h1>
+{{if .Code}}<p style="margin:0;color:#5a6377;">Enter this code to sign in as <strong style="color:#0b1220;">{{.Email}}</strong>:</p>{{template "code" .}}{{else}}<p style="margin:0;color:#5a6377;">Click below to sign in as <strong style="color:#0b1220;">{{.Email}}</strong>.</p>{{end}}
+{{if .Link}}{{template "button" .}}{{end}}
+<p style="margin:20px 0 0;font-size:13px;color:#5a6377;">This expires in {{.ExpiresIn}} and works once. If you didn't try to sign in, ignore this email.</p>
+{{end}}
