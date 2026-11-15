@@ -96,10 +96,28 @@
 
   /* --- Steps ---------------------------------------------------------------- */
 
-  function setEmail(email) {
+  /* The email address never goes into the URL. The address the user typed
+   * is kept in sessionStorage (this tab only) so the next steps can say
+   * where the code went and pre-fill the email field. */
+  var EMAIL_KEY = 'goauth:email';
+  function rememberEmail(email) {
+    try { if (email) sessionStorage.setItem(EMAIL_KEY, email); } catch (_) {}
+  }
+  function recalledEmail() {
+    try { return sessionStorage.getItem(EMAIL_KEY) || ''; } catch (_) { return ''; }
+  }
+  function showEmail() {
+    var email = recalledEmail();
     if (!email) return;
     $all('[data-ga-email]').forEach(function (el) { el.textContent = email; });
-    $all('input[name="email"]').forEach(function (el) { el.value = email; });
+    $all('input[name="email"]:not([type=hidden])').forEach(function (el) { if (!el.value) el.value = email; });
+  }
+
+  /* The verification id (vid) and, for the new-password step, a one-time
+   * token identify the flow from step to step. */
+  function setFlow(vid, token) {
+    if (vid) $all('input[name="vid"]').forEach(function (el) { el.value = vid; });
+    if (token) $all('input[name="token"]').forEach(function (el) { el.value = token; });
   }
 
   function setStep(step, opts) {
@@ -111,8 +129,9 @@
     try {
       var url = new URL(location.href);
       url.searchParams.set('step', step);
-      ['error', 'token'].forEach(function (k) { url.searchParams.delete(k); });
-      if (opts.email) url.searchParams.set('email', opts.email);
+      ['error', 'field', 'token', 'email'].forEach(function (k) { url.searchParams.delete(k); });
+      if (opts.vid) url.searchParams.set('vid', opts.vid);
+      if (step === 'request' || step === 'done') url.searchParams.delete('vid');
       history.replaceState(null, '', url);
     } catch (_) {}
     if (step === 'code' || step === 'sent') startCountdown(opts.resendAfter);
@@ -128,15 +147,12 @@
     });
   });
 
-  // Carry the typed email to "Forgot password?" and "Email me a code".
+  // Carry the typed email to "Forgot password?" and "Email me a code"
+  // through sessionStorage, not the link.
   $all('a[data-carry-email]').forEach(function (link) {
     link.addEventListener('click', function () {
       var input = document.querySelector('input[type=email]');
-      if (input && input.value.trim()) {
-        var url = new URL(link.href);
-        url.searchParams.set('email', input.value.trim());
-        link.href = url.toString();
-      }
+      if (input && input.value.trim()) rememberEmail(input.value.trim());
     });
   });
 
@@ -274,6 +290,14 @@
         first = first || input;
       }
     });
+    // "Confirm password" must match the password it confirms.
+    $all('input[data-confirms]', form).filter(visible).forEach(function (confirm) {
+      var pw = document.getElementById(confirm.getAttribute('data-confirms'));
+      if (pw && confirm.value && confirm.value !== pw.value) {
+        setFieldError(confirm, "Passwords don't match.");
+        first = first || confirm;
+      }
+    });
     if (first) first.focus();
     return !first;
   }
@@ -289,6 +313,8 @@
       e.preventDefault();
       clearMessages();
       if (!validate(form)) return;
+      var typed = form.querySelector('input[name="email"]:not([type=hidden])');
+      if (typed) rememberEmail(typed.value.trim());
       var button = form.querySelector('.ga-submit') || form.querySelector('button[data-resend]');
       busy(button, true);
 
@@ -319,15 +345,16 @@
           }
           busy(button, false);
           if (d.type === 'step') {
-            setEmail(d.email);
+            setFlow(d.vid, d.token);
+            showEmail();
             if (d.step === 'done') {
               var done = document.getElementById('ga-done-text');
               if (done && d.message) done.textContent = d.message;
-              setStep('done', { email: d.email });
+              setStep('done');
               return;
             }
             var resent = form.classList.contains('ga-resend');
-            setStep(d.step, { email: d.email, resendAfter: d.resend_after });
+            setStep(d.step, { vid: d.vid, resendAfter: d.resend_after });
             // The "sent" panel already explains itself; only confirm resends.
             showNotice(resent ? 'We sent you a new email.' : (d.step === 'sent' ? '' : d.message));
           }
@@ -342,14 +369,17 @@
   /* --- Initial state ------------------------------------------------------------- */
 
   // A link token has done its job once the page has it in a hidden field:
-  // take it out of the address bar and history.
+  // take it out of the address bar and history. An email from an old link
+  // goes too.
   try {
     var url = new URL(location.href);
-    if (url.searchParams.has('token')) {
+    if (url.searchParams.has('token') || url.searchParams.has('email')) {
       url.searchParams.delete('token');
+      url.searchParams.delete('email');
       history.replaceState(null, '', url);
     }
   } catch (_) {}
+  showEmail();
 
   var step = card.getAttribute('data-step');
   if (step === 'code' || step === 'sent') startCountdown();

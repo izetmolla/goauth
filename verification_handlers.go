@@ -8,12 +8,27 @@ import (
 	"time"
 )
 
-// dispatchVerification looks the user up, issues a code/link and sends the
-// email, all in the background. The HTTP response is identical whether or
-// not the account exists, and its timing does not depend on the database
-// or the mail provider. onlyUnverified skips users whose email is already
-// confirmed.
-func (a *Authorization) dispatchVerification(r *http.Request, f *verifyFeature, email string, onlyUnverified bool) {
+// sendVerification answers a "send me a code" request: it picks the
+// verification id the client continues with and, unless a live code is still
+// inside its resend cooldown, emails a new one in the background. The id
+// comes back the same way whether or not the account exists.
+func (a *Authorization) sendVerification(r *http.Request, f *verifyFeature, email string, onlyUnverified bool) (string, error) {
+	id, fresh, err := a.challengeID(r.Context(), f, email)
+	if err != nil {
+		return "", err
+	}
+	if fresh {
+		a.dispatchVerification(r, f, id, email, onlyUnverified)
+	}
+	return id, nil
+}
+
+// dispatchVerification looks the user up, issues a code/link under id and
+// sends the email, all in the background. The HTTP response is identical
+// whether or not the account exists, and its timing does not depend on the
+// database or the mail provider. onlyUnverified skips users whose email is
+// already confirmed.
+func (a *Authorization) dispatchVerification(r *http.Request, f *verifyFeature, id, email string, onlyUnverified bool) {
 	origin, _, err := a.origin(r)
 	if err != nil {
 		a.verifyError(r.Context(), f.kind, email, err)
@@ -31,8 +46,8 @@ func (a *Authorization) dispatchVerification(r *http.Request, f *verifyFeature, 
 		if user == nil || user.ID == "" || (onlyUnverified && user.EmailVerified) {
 			return
 		}
-		msg, err := a.issueVerification(ctx, f, email, user.ID, origin)
-		if err != nil || msg == nil { // msg == nil: resend cooldown
+		msg, err := a.issueVerification(ctx, f, id, email, user.ID, origin)
+		if err != nil {
 			a.verifyError(ctx, f.kind, email, err)
 			return
 		}
@@ -79,41 +94,75 @@ func (a *Authorization) featureOn(w http.ResponseWriter, f func(*verification) *
 
 var (
 	emailField    = CredentialField{Name: inputEmail, Type: inputEmail}
+	vidField      = CredentialField{Name: fieldVID}
 	codeField     = CredentialField{Name: stepCode}
 	tokenField    = CredentialField{Name: fieldToken}
 	passwordField = CredentialField{Name: inputPassword, Type: inputPassword}
+	confirmField  = CredentialField{Name: fieldConfirm, Type: inputPassword}
 )
 
-// startVerification is the shared "send me a code" step.
+func verifyInputFrom(in formInput) verifyInput {
+	return verifyInput{
+		vid:   in.values[fieldVID],
+		email: normalizeEmail(in.values[inputEmail]),
+		code:  in.values[stepCode],
+		token: in.values[fieldToken],
+	}
+}
+
+// startVerification is the shared "send me a code" step. The email comes
+// from the form, or, for "resend", from the verification id.
 func (a *Authorization) startVerification(w http.ResponseWriter, r *http.Request, f *verifyFeature, page, sentMessage string, onlyUnverified bool) {
-	in, ok := a.postForm(w, r, page, []CredentialField{emailField})
+	in, ok := a.postForm(w, r, page, []CredentialField{emailField, vidField})
 	if !ok {
 		return
 	}
-	email := normalizeEmail(in.values[inputEmail])
-	if email == "" {
-		a.failure(w, r, page, http.StatusBadRequest, codeInvalidEmail, "Enter a valid email address.", inputEmail)
-		return
-	}
-	a.dispatchVerification(r, f, email, onlyUnverified)
 	step := stepSent
 	if f.code.Delivery.hasCode() {
 		step = stepCode
 	}
-	a.stepResponse(w, r, page, step, email, sentMessage, a.codeExtras(f))
+	email := normalizeEmail(in.values[inputEmail])
+	if email == "" && in.values[fieldVID] != "" {
+		var err error
+		email, err = a.identifierForVID(r.Context(), f, in.values[fieldVID])
+		if errors.Is(err, ErrVerificationInvalid) {
+			// Unknown id (for example an email without an account): answer
+			// exactly like a resend inside the cooldown.
+			a.stepResponse(w, r, page, step, in.values[fieldVID], sentMessage, a.codeExtras(f))
+			return
+		}
+		if err != nil {
+			a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
+			return
+		}
+	}
+	if email == "" {
+		a.failure(w, r, page, http.StatusBadRequest, codeInvalidEmail, "Enter a valid email address.", inputEmail)
+		return
+	}
+	vid, err := a.sendVerification(r, f, email, onlyUnverified)
+	if err != nil {
+		a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
+		return
+	}
+	a.stepResponse(w, r, page, step, vid, sentMessage, a.codeExtras(f))
+}
+
+// verificationFailed writes the error for a failed code or token check.
+func (a *Authorization) verificationFailed(w http.ResponseWriter, r *http.Request, page string, err error) {
+	if errors.Is(err, ErrVerificationInvalid) {
+		a.failure(w, r, page, http.StatusBadRequest, codeInvalidCode, "That code is invalid or has expired. Request a new one and try again.", stepCode)
+		return
+	}
+	a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 }
 
 // checkVerification is the shared "here is my code / link" step. It writes
 // the error response and returns nil on failure.
 func (a *Authorization) checkVerification(w http.ResponseWriter, r *http.Request, f *verifyFeature, page string, in formInput) *VerificationToken {
-	email := normalizeEmail(in.values[inputEmail])
-	row, err := a.consumeVerification(r.Context(), f, email, in.values[stepCode], in.values[fieldToken])
-	switch {
-	case errors.Is(err, ErrVerificationInvalid):
-		a.failure(w, r, page, http.StatusBadRequest, codeInvalidCode, "That code is invalid or has expired. Request a new one and try again.", stepCode)
-		return nil
-	case err != nil:
-		a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
+	row, err := a.consumeVerification(r.Context(), f, verifyInputFrom(in))
+	if err != nil {
+		a.verificationFailed(w, r, page, err)
 		return nil
 	}
 	return row
@@ -123,7 +172,7 @@ func (a *Authorization) checkVerification(w http.ResponseWriter, r *http.Request
 
 // HandleForgotPassword implements POST {base}/password/forgot: it emails a
 // reset code or link when the account exists, and answers the same either
-// way.
+// way. The response carries the verification id (vid) for the next steps.
 func (a *Authorization) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	f, ok := a.featureOn(w, func(v *verification) *verifyFeature { return &v.reset })
 	if !ok {
@@ -132,15 +181,38 @@ func (a *Authorization) HandleForgotPassword(w http.ResponseWriter, r *http.Requ
 	a.startVerification(w, r, f, pageForgot, "If an account exists for that email, we've sent password reset instructions.", false)
 }
 
+// HandleResetVerifyCode implements POST {base}/password/verify-code: it
+// checks the emailed code and, if it is right, answers with a one-time
+// token for choosing the new password (step "reset"). The code cannot be
+// used again.
+func (a *Authorization) HandleResetVerifyCode(w http.ResponseWriter, r *http.Request) {
+	f, ok := a.featureOn(w, func(v *verification) *verifyFeature { return &v.reset })
+	if !ok {
+		return
+	}
+	in, ok := a.postForm(w, r, pageForgot, []CredentialField{vidField, emailField, codeField})
+	if !ok {
+		return
+	}
+	row, token, err := a.exchangeCodeForToken(r.Context(), f, verifyInputFrom(in))
+	if err != nil {
+		a.verificationFailed(w, r, pageForgot, err)
+		return
+	}
+	a.stepResponse(w, r, pageForgot, stepReset, row.ID, "Code confirmed. Choose a new password.", Map{fieldToken: token})
+}
+
 // HandleResetPassword implements POST {base}/password/reset: it checks the
-// code (or link token), stores the new password with SetPassword and signs
-// the user out everywhere (unless PasswordReset.KeepSessions).
+// token (from the reset link or from HandleResetVerifyCode) or the code,
+// stores the new password with SetPassword and signs the user out
+// everywhere (unless PasswordReset.KeepSessions). When password_confirm is
+// sent it must match password.
 func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
 	f, ok := a.featureOn(w, func(v *verification) *verifyFeature { return &v.reset })
 	if !ok {
 		return
 	}
-	in, ok := a.postForm(w, r, pageForgot, []CredentialField{emailField, codeField, tokenField, passwordField})
+	in, ok := a.postForm(w, r, pageForgot, []CredentialField{vidField, emailField, codeField, tokenField, passwordField, confirmField})
 	if !ok {
 		return
 	}
@@ -148,6 +220,10 @@ func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Reque
 	pw := in.values[inputPassword]
 	if len([]rune(pw)) < opts.MinPasswordLength {
 		a.failure(w, r, pageForgot, http.StatusBadRequest, codeWeakPassword, "Use at least "+strconv.Itoa(opts.MinPasswordLength)+" characters.", inputPassword)
+		return
+	}
+	if confirm, sent := in.values[fieldConfirm]; sent && confirm != "" && confirm != pw {
+		a.failure(w, r, pageForgot, http.StatusBadRequest, codePasswordMismatch, "Passwords don't match.", fieldConfirm)
 		return
 	}
 	row := a.checkVerification(w, r, f, pageForgot, in)
@@ -173,7 +249,7 @@ func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Reque
 	if mv := a.verify.opts.MarkVerified; mv != nil {
 		_ = mv(ctx, row.UserID)
 	}
-	a.stepResponse(w, r, pageForgot, stepDone, row.Identifier, "Your password has been updated. You can sign in now.", nil)
+	a.stepResponse(w, r, pageForgot, stepDone, "", "Your password has been updated. You can sign in now.", nil)
 }
 
 // --- One-time code sign-in ------------------------------------------------------
@@ -194,7 +270,7 @@ func (a *Authorization) HandleOTPVerify(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	in, ok := a.postForm(w, r, pageOTP, []CredentialField{emailField, codeField, tokenField})
+	in, ok := a.postForm(w, r, pageOTP, []CredentialField{vidField, emailField, codeField, tokenField})
 	if !ok {
 		return
 	}
@@ -227,7 +303,7 @@ func (a *Authorization) HandleVerifyEmail(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	in, ok := a.postForm(w, r, pageVerify, []CredentialField{emailField, codeField, tokenField})
+	in, ok := a.postForm(w, r, pageVerify, []CredentialField{vidField, emailField, codeField, tokenField})
 	if !ok {
 		return
 	}
@@ -239,5 +315,5 @@ func (a *Authorization) HandleVerifyEmail(w http.ResponseWriter, r *http.Request
 		a.failure(w, r, pageVerify, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 		return
 	}
-	a.stepResponse(w, r, pageVerify, stepDone, row.Identifier, "Your email is confirmed. You can sign in now.", nil)
+	a.stepResponse(w, r, pageVerify, stepDone, "", "Your email is confirmed. You can sign in now.", nil)
 }

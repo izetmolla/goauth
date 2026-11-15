@@ -50,8 +50,10 @@ type pageData struct {
 
 	CSSURL, JSURL, SessionJSURL string
 
-	Step      string
-	Email     string
+	Step string
+	// Vid is the verification id the multi-step pages continue with. The
+	// email address never travels in the URL.
+	Vid       string
 	Token     string
 	Redirect  string
 	CSRFToken string
@@ -210,7 +212,6 @@ func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page 
 		CSSURL:       assetURL("goauth.css"),
 		JSURL:        assetURL("goauth.js"),
 		SessionJSURL: assetURL("session.js"),
-		Email:        normalizeEmail(q.Get(inputEmail)),
 		Token:        q.Get(fieldToken),
 		Redirect:     cmp.Or(sameOriginRedirect(origin, cmp.Or(q.Get("redirectUrl"), q.Get("callbackUrl"))), a.defaultRedirect()),
 		CSRFToken:    a.ensureCSRFToken(w, r, secure),
@@ -221,7 +222,10 @@ func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page 
 	if len(d.Token) > 128 {
 		d.Token = ""
 	}
-	d.Step = pickStep(page, q.Get("step"), d.Token != "", d.Email != "")
+	if vid := q.Get(fieldVID); validVID(vid) {
+		d.Vid = vid
+	}
+	d.Step = pickStep(page, q.Get("step"), d.Token != "", d.Vid != "")
 	if d.Error != "" && fieldName.MatchString(q.Get("field")) {
 		d.ErrorField = q.Get("field")
 	}
@@ -264,8 +268,8 @@ func placeFieldError(d *pageData) {
 }
 
 // pickStep chooses the step to show from ?step=, falling back to the page's
-// first step. Token steps need a token; code steps need an email.
-func pickStep(page, want string, hasToken, hasEmail bool) string {
+// first step. Token steps need a token; code steps need a verification id.
+func pickStep(page, want string, hasToken, hasVID bool) string {
 	steps := pageSteps[page]
 	if hasToken {
 		for _, s := range []string{stepLink, stepReset} {
@@ -277,7 +281,7 @@ func pickStep(page, want string, hasToken, hasEmail bool) string {
 	switch {
 	case want == stepLink || want == stepReset:
 		return steps[0]
-	case (want == stepCode || want == stepSent) && !hasEmail:
+	case (want == stepCode || want == stepSent) && !hasVID:
 		return steps[0]
 	case slices.Contains(steps, want):
 		return want
@@ -286,12 +290,13 @@ func pickStep(page, want string, hasToken, hasEmail bool) string {
 }
 
 var pageActions = map[string]string{
-	formForgot:   DefaultBasePath + "/password/forgot",
-	"reset":      DefaultBasePath + "/password/reset",
-	"otpSend":    DefaultBasePath + "/otp/send",
-	"otpVerify":  DefaultBasePath + "/otp/verify",
-	"verifySend": DefaultBasePath + "/verify-email/send",
-	formVerify:   DefaultBasePath + "/verify-email",
+	formForgot:    DefaultBasePath + "/password/forgot",
+	"resetVerify": DefaultBasePath + "/password/verify-code",
+	"reset":       DefaultBasePath + "/password/reset",
+	"otpSend":     DefaultBasePath + "/otp/send",
+	"otpVerify":   DefaultBasePath + "/otp/verify",
+	"verifySend":  DefaultBasePath + "/verify-email/send",
+	formVerify:    DefaultBasePath + "/verify-email",
 }
 
 func (a *Authorization) pageLinks() pageLinks {

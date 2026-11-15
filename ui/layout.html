@@ -124,7 +124,7 @@
       <div class="ga-field">
         <label for="ga-email">Email</label>
         <div class="ga-input">
-          <input id="ga-email" name="email" type="email" value="{{.Email}}" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required{{if and .ErrorPlaced (eq .ErrorField "email")}} aria-invalid="true" aria-describedby="ga-email-error"{{end}}>
+          <input id="ga-email" name="email" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required{{if and .ErrorPlaced (eq .ErrorField "email")}} aria-invalid="true" aria-describedby="ga-email-error"{{end}}>
         </div>
         {{- if and .ErrorPlaced (eq .ErrorField "email")}}{{template "fielderror" (fieldError "ga-email-error" .Error)}}{{end}}
       </div>
@@ -137,7 +137,7 @@
           </button>
 {{- end}}
 
-{{/* A "new password" input with live strength hints. */}}
+{{/* "New password" with live strength hints, then the same password again. */}}
 {{define "newpassword"}}
       <div class="ga-field">
         <label for="ga-new-password-{{.}}">New password</label>
@@ -147,6 +147,13 @@
         </div>
       </div>
       {{- template "rules"}}
+      <div class="ga-field">
+        <label for="ga-confirm-password-{{.}}">Confirm new password</label>
+        <div class="ga-input ga-input--password">
+          <input id="ga-confirm-password-{{.}}" name="password_confirm" type="password" autocomplete="new-password" required data-confirms="ga-new-password-{{.}}">
+          {{- template "reveal"}}
+        </div>
+      </div>
 {{- end}}
 
 {{define "rules"}}
@@ -171,7 +178,7 @@
 {{define "sent"}}
     <div class="ga-panel" data-for="sent">
       <div class="ga-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 7l9 6 9-6"/></svg></div>
-      <p>We sent an email to <strong data-ga-email>{{.Email}}</strong>. Open it and follow the link to continue.</p>
+      <p>We sent an email to <strong data-ga-email>your email address</strong>. Open it and follow the link to continue.</p>
       <p class="ga-hint">Can't find it? Check your spam folder.</p>
     </div>
 {{- end}}
@@ -179,7 +186,7 @@
 {{define "resend"}}
     <form class="ga-form ga-resend" method="post" action="{{.ResendAction}}" data-for="code sent" novalidate>
       {{- template "hidden" .}}
-      <input type="hidden" name="email" value="{{.Email}}" data-ga-email-input>
+      <input type="hidden" name="vid" value="{{.Vid}}">
       <p class="ga-resend-row">Didn't get it? <button class="ga-link-btn" type="submit" data-resend>Resend email</button></p>
     </form>
 {{- end}}

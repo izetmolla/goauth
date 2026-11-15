@@ -1,6 +1,6 @@
 {{define "title"}}Reset password{{end}}
 {{define "heading"}}<span data-for="request">Forgot your password?</span><span data-for="code sent">Check your email</span><span data-for="reset">Choose a new password</span><span data-for="done">Password updated</span>{{end}}
-{{define "sub"}}<span data-for="request">Enter your email and we'll send you a {{if .Code.HasCode}}code{{else}}link{{end}} to reset it.</span><span data-for="code">Enter the code we sent to <strong data-ga-email>{{.Email}}</strong> and choose a new password.</span><span data-for="reset">for <strong>{{.Email}}</strong></span><span data-for="sent">Follow the link in the email to reset your password.</span><span data-for="done">You can sign in with your new password now.</span>{{end}}
+{{define "sub"}}<span data-for="request">Enter your email and we'll send you a {{if .Code.HasCode}}code{{else}}link{{end}} to reset it.</span><span data-for="code">Enter the code we sent to <strong data-ga-email>your email</strong>.</span><span data-for="reset">Enter it twice so we know it's right.</span><span data-for="sent">Follow the link in the email to reset your password.</span><span data-for="done">You can sign in with your new password now.</span>{{end}}
 {{define "content"}}
     <form class="ga-form" method="post" action="{{.Actions.forgot}}" data-for="request" novalidate>
       {{- template "hidden" .}}
@@ -9,21 +9,20 @@
       {{template "submit" (print "Send reset " (or (and .Code.HasCode "code") "link"))}}
     </form>
 
-    <form class="ga-form" method="post" action="{{.Actions.reset}}" data-for="code" novalidate>
+    <form class="ga-form" method="post" action="{{.Actions.resetVerify}}" data-for="code" novalidate>
       {{- template "hidden" .}}
       <input type="hidden" name="step" value="code">
-      <input type="hidden" name="email" value="{{.Email}}" data-ga-email-input>
+      <input type="hidden" name="vid" value="{{.Vid}}">
       {{- template "code" .}}
-      {{- template "newpassword" "code"}}
-      {{template "submit" "Reset password"}}
+      {{template "submit" "Continue"}}
     </form>
 
     <form class="ga-form" method="post" action="{{.Actions.reset}}" data-for="reset" novalidate>
       {{- template "hidden" .}}
       <input type="hidden" name="step" value="reset">
-      <input type="hidden" name="email" value="{{.Email}}">
+      <input type="hidden" name="vid" value="{{.Vid}}">
       <input type="hidden" name="token" value="{{.Token}}">
-      {{- template "newpassword" "link"}}
+      {{- template "newpassword" "reset"}}
       {{template "submit" "Reset password"}}
     </form>
 

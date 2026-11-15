@@ -36,6 +36,7 @@ const (
 	codeInvalidCode       = "INVALID_CODE"
 	codeInvalidEmail      = "INVALID_EMAIL"
 	codeWeakPassword      = "WEAK_PASSWORD"
+	codePasswordMismatch  = "PASSWORD_MISMATCH"
 
 	msgSomethingWrong = "Something went wrong. Please try again."
 )
@@ -50,12 +51,14 @@ const (
 	stepSent    = "sent"
 	stepDone    = "done"
 
-	fieldToken = "token"
-	formSignIn = "signin"
-	formReg    = "register"
-	formForgot = "forgot"
-	formOTP    = "otp"
-	formVerify = "verify"
+	fieldToken   = "token"
+	fieldVID     = "vid"
+	fieldConfirm = "password_confirm"
+	formSignIn   = "signin"
+	formReg      = "register"
+	formForgot   = "forgot"
+	formOTP      = "otp"
+	formVerify   = "verify"
 
 	keyStep = "step"
 )
@@ -218,12 +221,17 @@ func (a *Authorization) handleCredentials(w http.ResponseWriter, r *http.Request
 		email := normalizeEmail(user.Email)
 		if email != "" && !user.EmailVerified {
 			required := v.opts.EmailConfirmation.RequireConfirmed
+			var vid string
 			if register || required {
-				a.dispatchVerification(r, &v.confirm, email, true)
+				var err error
+				if vid, err = a.sendVerification(r, &v.confirm, email, true); err != nil {
+					a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
+					return
+				}
 			}
 			if required && register {
-				a.stepResponse(w, r, pageRegister, stepSent, email,
-					"Almost there! Check "+email+" to confirm your account.", a.codeExtras(&v.confirm))
+				a.stepResponse(w, r, pageRegister, stepSent, vid,
+					"Almost there! Check your inbox to confirm your account.", a.codeExtras(&v.confirm))
 				return
 			}
 			if required {
@@ -272,7 +280,8 @@ func (a *Authorization) finishSignIn(w http.ResponseWriter, r *http.Request, pag
 
 // failure answers a failed request: JSON for fetch and token clients,
 // otherwise a redirect back to the page (no-JS form posts) carrying only an
-// error code, the step and the email.
+// error code, the field it is about, the step and the verification id or
+// token needed to stay on that step. Emails never go into the URL.
 func (a *Authorization) failure(w http.ResponseWriter, r *http.Request, page string, status int, code, message, field string) {
 	path := a.pagePath(page)
 	if isTokenFlow(r) || wantsJSON(r) || path == "" {
@@ -287,21 +296,30 @@ func (a *Authorization) failure(w http.ResponseWriter, r *http.Request, page str
 	if fieldName.MatchString(field) {
 		q.Set("field", field)
 	}
-	if step := r.PostFormValue(keyStep); step != "" {
+	step := r.PostFormValue(keyStep)
+	if step != "" {
 		q.Set(keyStep, step)
 	}
-	if email := normalizeEmail(r.PostFormValue(inputEmail)); email != "" {
-		q.Set(inputEmail, email)
+	if vid := r.PostFormValue(fieldVID); validVID(vid) {
+		q.Set(fieldVID, vid)
+	}
+	if tok := r.PostFormValue(fieldToken); tok != "" && len(tok) <= 128 && (step == stepReset || step == stepLink) {
+		q.Set(fieldToken, tok)
 	}
 	http.Redirect(w, r, path+"?"+q.Encode(), http.StatusSeeOther)
 }
 
 // stepResponse moves a multi-step page forward: JSON for fetch clients, a
-// redirect to the page at that step otherwise.
-func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, page, step, email, message string, extra Map) {
+// redirect to the page at that step otherwise. vid identifies the
+// verification for the following steps; extra may carry a "token" for the
+// password reset step.
+func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, page, step, vid, message string, extra Map) {
 	path := a.pagePath(page)
 	if isTokenFlow(r) || wantsJSON(r) || path == "" {
-		body := Map{payloadType: keyStep, keyStep: step, inputEmail: email, "message": message}
+		body := Map{payloadType: keyStep, keyStep: step, "message": message}
+		if vid != "" {
+			body[fieldVID] = vid
+		}
 		for k, v := range extra {
 			body[k] = v
 		}
@@ -309,8 +327,11 @@ func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, pag
 		return
 	}
 	q := url.Values{keyStep: {step}}
-	if email != "" {
-		q.Set(inputEmail, email)
+	if vid != "" {
+		q.Set(fieldVID, vid)
+	}
+	if tok, _ := extra[fieldToken].(string); tok != "" {
+		q.Set(fieldToken, tok)
 	}
 	http.Redirect(w, r, path+"?"+q.Encode(), http.StatusSeeOther)
 }

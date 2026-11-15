@@ -164,12 +164,28 @@ API endpoints, present while the feature is enabled:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `{base}/password/forgot` | Send reset email (`email`) |
-| `POST` | `{base}/password/reset` | Set password (`email`, `code` or `token`, `password`) |
-| `POST` | `{base}/otp/send` | Send code (`email`) |
-| `POST` | `{base}/otp/verify` | Sign in (`email`, `code` or `token`) |
-| `POST` | `{base}/verify-email/send` | (Re)send confirmation (`email`) |
-| `POST` | `{base}/verify-email` | Confirm (`email`, `code` or `token`) |
+| `POST` | `{base}/password/forgot` | Send reset email (`email`, or `vid` to resend) |
+| `POST` | `{base}/password/verify-code` | Check the code (`vid`, `code`) and get a one-time `token` for the next step |
+| `POST` | `{base}/password/reset` | Set password (`vid`, `token`, `password`, `password_confirm`) |
+| `POST` | `{base}/otp/send` | Send code (`email`, or `vid` to resend) |
+| `POST` | `{base}/otp/verify` | Sign in (`vid` + `code`, or `vid` + `token` from the magic link) |
+| `POST` | `{base}/verify-email/send` | (Re)send confirmation (`email`, or `vid` to resend) |
+| `POST` | `{base}/verify-email` | Confirm (`vid` + `code`, or `vid` + `token` from the link) |
+
+### The verification id (`vid`)
+
+Only the first request carries the email address. Every answer to a "send" request includes a **`vid`**: the id of the row in the verification table. The following steps name the verification by that id, so **the email never appears in a URL**, neither in the pages' address bar nor in the links in emails (`?vid=…&token=…`).
+
+- The `vid` comes back the same way whether or not the email has an account. For an unknown email it points at nothing, and using it fails exactly like a wrong code.
+- A resend inside the cooldown answers with the `vid` of the code that is still live, so the code from the earlier email keeps working.
+- API clients may still send `email` + `code` instead of a `vid`. The pages always use the `vid`.
+
+### Password reset in two steps
+
+1. `POST /password/verify-code` with `vid` and `code`. A right code is used up and exchanged for a one-time `token`: `{"type":"step","step":"reset","vid":"…","token":"…"}`.
+2. `POST /password/reset` with `vid`, `token`, `password` and `password_confirm`. If the two passwords differ, the answer is `PASSWORD_MISMATCH` on the `password_confirm` field.
+
+A reset **link** in the email skips step 1: it opens the page at the new-password step with its own token. `POST /password/reset` with `code` + `password` in one request still works for API clients.
 
 Pages, **off by default** (turn on with `UI.EnableAllUI` or one by one, see [Built-in pages](./sign-in-page.md)):
 
@@ -184,11 +200,11 @@ Endpoints that are off answer `404`. Every POST needs the CSRF token (`csrfToken
 With `Accept: application/json`, the responses look like this:
 
 ```json
-{"type": "step", "step": "code", "email": "jane@example.com", "message": "…",
+{"type": "step", "step": "code", "vid": "60683308-e2b5-475a-b2bf-392c97653dc0", "message": "…",
  "resend_after": 60, "code_length": 6, "has_code": true, "has_link": true}
 ```
 
-`step` is `code` (enter the code), `sent` (check your email), or `done` (finished). A successful one-time sign-in returns the same `sign_in` payload as a password sign-in. Errors use `{"message", "code", "field"}`, for example `INVALID_CODE`, `WEAK_PASSWORD` or `EMAIL_NOT_VERIFIED`.
+`step` is `code` (enter the code), `reset` (choose a new password), `sent` (check your email), or `done` (finished). A successful one-time sign-in returns the same `sign_in` payload as a password sign-in. Errors use `{"message", "code", "field"}`, for example `INVALID_CODE`, `WEAK_PASSWORD`, `PASSWORD_MISMATCH` or `EMAIL_NOT_VERIFIED`.
 
 ### Links need their page
 

@@ -174,7 +174,7 @@ func TestCredentialsRequireCSRFAndReturnUserFacingErrors(t *testing.T) {
 
 	// No-JS form post: redirected back to the page with only an error code.
 	rec = do(t, h, http.MethodPost, DefaultBasePath+"/provider/credentials", form, nil, csrfRec.Result().Cookies()...)
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != DefaultBasePath+"/signin?email=a%40b.c&error=CREDENTIALS_SIGNIN&field=password" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != DefaultBasePath+"/signin?error=CREDENTIALS_SIGNIN&field=password" {
 		t.Fatalf("no-JS failure = %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 
