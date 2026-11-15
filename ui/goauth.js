@@ -24,23 +24,63 @@
 
   /* --- Messages ------------------------------------------------------------ */
 
+  var ERROR_ICON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 4a1 1 0 0 1 1 1v3.5a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Zm0 8.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></svg>';
+
+  function shake(el) {
+    if (!el) return;
+    el.classList.remove('is-shake');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('is-shake');
+  }
+
+  /* Field errors: a message under the input, linked by aria-describedby. */
+  function setFieldError(input, message) {
+    var field = input.closest('.ga-field');
+    if (!field) return false;
+    var el = field.querySelector('.ga-field-error');
+    if (!el) {
+      el = document.createElement('p');
+      el.className = 'ga-field-error';
+      el.id = (input.id || input.name) + '-error';
+      el.setAttribute('role', 'alert');
+      el.innerHTML = ERROR_ICON + '<span></span>';
+      field.appendChild(el);
+    }
+    el.querySelector('span').textContent = message;
+    el.hidden = false;
+    input.setAttribute('aria-invalid', 'true');
+    input.setAttribute('aria-describedby', el.id);
+    var otp = input.closest('.ga-otp');
+    if (otp) otp.setAttribute('aria-invalid', 'true');
+    shake(otp || input.closest('.ga-input'));
+    return true;
+  }
+  function clearFieldError(input) {
+    input.removeAttribute('aria-invalid');
+    input.removeAttribute('aria-describedby');
+    var otp = input.closest('.ga-otp');
+    if (otp) otp.removeAttribute('aria-invalid');
+    var field = input.closest('.ga-field');
+    var el = field && field.querySelector('.ga-field-error');
+    if (el) el.hidden = true;
+  }
+
+  /* An error about one input goes under that input; anything else (expired
+   * session, server or network trouble) goes in the alert at the top. */
   function showError(message, field, form) {
     noticeBox.hidden = true;
-    errorText.textContent = message || 'Something went wrong. Please try again.';
-    errorBox.hidden = false;
-    errorBox.classList.remove('is-shake');
-    void errorBox.offsetWidth; // restart the animation
-    errorBox.classList.add('is-shake');
-    if (form && field) {
-      var input = form.querySelector('[name="' + CSS.escape(field) + '"]');
-      if (input) {
-        input.setAttribute('aria-invalid', 'true');
-        var otp = input.closest('.ga-otp');
-        if (otp) otp.setAttribute('aria-invalid', 'true');
-        if (field === 'code') { input.value = ''; input.dispatchEvent(new Event('input')); }
-        input.focus();
-      }
+    message = message || 'Something went wrong. Please try again.';
+    var input = form && field ? form.querySelector('[name="' + CSS.escape(field) + '"]:not([type=hidden])') : null;
+    if (input && visible(input)) {
+      errorBox.hidden = true;
+      if (field === 'code') { input.value = ''; input.dispatchEvent(new Event('input')); }
+      setFieldError(input, message);
+      input.focus();
+      return;
     }
+    errorText.textContent = message;
+    errorBox.hidden = false;
+    shake(errorBox);
   }
   function showNotice(message) {
     if (!message) return;
@@ -51,7 +91,7 @@
   function clearMessages() {
     errorBox.hidden = true;
     noticeBox.hidden = true;
-    $all('[aria-invalid="true"]').forEach(function (el) { el.removeAttribute('aria-invalid'); });
+    $all('input[aria-invalid="true"]').forEach(clearFieldError);
   }
 
   /* --- Steps ---------------------------------------------------------------- */
@@ -147,12 +187,9 @@
     });
   });
 
+  // Editing a field clears its error.
   document.addEventListener('input', function (e) {
-    if (e.target.getAttribute && e.target.getAttribute('aria-invalid') === 'true') {
-      e.target.removeAttribute('aria-invalid');
-      var otp = e.target.closest('.ga-otp');
-      if (otp) otp.removeAttribute('aria-invalid');
-    }
+    if (e.isTrusted && e.target.getAttribute && e.target.getAttribute('aria-invalid') === 'true') clearFieldError(e.target);
   });
 
   /* --- Segmented code boxes ---------------------------------------------------- */
@@ -184,7 +221,7 @@
     }
     input.addEventListener('input', function () {
       var v = render();
-      if (v) errorBox.hidden = true; // a fresh attempt replaces the old error
+      if (v && input.getAttribute('aria-invalid') === 'true') clearFieldError(input); // a fresh attempt replaces the old error
       if (v.length === length && input.form) {
         if (input.form.requestSubmit) input.form.requestSubmit(); else input.form.dispatchEvent(new Event('submit', { cancelable: true }));
       }
@@ -221,8 +258,24 @@
 
   /* --- Forms -------------------------------------------------------------------- */
 
-  function firstEmpty(form) {
-    return $all('input[required]', form).filter(function (i) { return !i.value.trim(); })[0] || null;
+  /* Client-side checks: every problem is shown under its own input. */
+  var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function validate(form) {
+    var first = null;
+    $all('input[required]:not([type=hidden])', form).filter(visible).forEach(function (input) {
+      var label = form.querySelector('label[for="' + input.id + '"]');
+      var name = label ? label.textContent.trim() : 'This field';
+      var value = input.value.trim();
+      var message = '';
+      if (!value) message = name + ' is required.';
+      else if (input.type === 'email' && !EMAIL.test(value)) message = 'Enter a valid email address.';
+      if (message) {
+        setFieldError(input, message);
+        first = first || input;
+      }
+    });
+    if (first) first.focus();
+    return !first;
   }
 
   function busy(button, on) {
@@ -235,12 +288,7 @@
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       clearMessages();
-      var empty = firstEmpty(form);
-      if (empty) {
-        var label = form.querySelector('label[for="' + empty.id + '"]');
-        showError((label ? label.textContent : 'This field') + ' is required.', empty.name, form);
-        return;
-      }
+      if (!validate(form)) return;
       var button = form.querySelector('.ga-submit') || form.querySelector('button[data-resend]');
       busy(button, true);
 

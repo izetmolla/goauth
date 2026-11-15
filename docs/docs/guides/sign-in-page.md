@@ -120,7 +120,39 @@ credentials.New(credentials.Options{
 ```
 
 - `OAuthUser.ID` must be your user's id. goauth creates the session, loads the user's roles from the users table, and sets the session cookie.
-- Return a `*goauth.CredentialsError` for a message the user should see. `Field` focuses that input. Any other error is shown as a generic "Something went wrong", so database errors never reach the browser.
+- Return a `*goauth.CredentialsError` for a message the user should see. Any other error is shown as a generic "Something went wrong", so database errors never reach the browser.
+
+### Where errors appear
+
+An error about one input is shown **under that input**: the field is outlined in red, focused, and linked to the message for screen readers. Everything else, such as an expired session, a server error or a lost connection, appears in the **alert at the top** of the card. Editing a field clears its message.
+
+| Error | Shown |
+|---|---|
+| A required field left empty, or a malformed email (checked in the browser) | Under that field |
+| `CredentialsError{Field: "email"}` / `{Field: "password"}` (any field name of the form) | Under that field |
+| A wrong or expired code, an invalid email, a password that is too short | Under the code boxes, the email or the password |
+| `CredentialsError` without `Field`, `(nil, nil)` from `Authorize`, expired session, server error | Alert at the top |
+
+So to put "Incorrect password" under the password field, return it with `Field`:
+
+```go
+Authorize: func(ctx context.Context, c map[string]string, r *http.Request) (*goauth.OAuthUser, error) {
+	u, err := findUserByEmail(ctx, c["email"])
+	if err != nil {
+		return nil, &goauth.CredentialsError{Message: "We couldn't find an account with that email.", Field: "email"}
+	}
+	if !goauth.CheckPassword(u.PasswordHash, c["password"]) {
+		return nil, &goauth.CredentialsError{Message: "Incorrect password.", Field: "password"}
+	}
+	return &goauth.OAuthUser{ID: u.ID, Email: u.Email}, nil
+},
+```
+
+:::caution[Telling users whether an email exists]
+Separate "no such account" and "wrong password" messages let anyone check which emails have an account. Many sites accept that for a clearer sign-in. If you don't, return one message, for example `CredentialsError{Message: "Invalid email or password.", Field: "password"}`, for both cases.
+:::
+
+This works without JavaScript too: a failed form post returns to the page with the field name, and the page renders the message under the same input.
 - Returning `nil, nil` means "invalid credentials".
 - A successful sign-up signs the new user in. With email confirmation and `RequireConfirmed`, it shows "Check your inbox" instead (see [verification](./verification.md)).
 - goauth does not rate-limit these endpoints. Put a rate limiter in front of them (per IP and per email).

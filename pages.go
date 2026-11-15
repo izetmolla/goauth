@@ -14,10 +14,19 @@ import (
 var pageTemplates = func() map[string]*template.Template {
 	out := map[string]*template.Template{}
 	for _, name := range []string{formSignIn, formReg, formForgot, formOTP, formVerify} {
-		out[name] = template.Must(template.ParseFS(uiFiles, "ui/layout.html", "ui/"+name+".html"))
+		out[name] = template.Must(template.New(name).Funcs(pageFuncs).ParseFS(uiFiles, "ui/layout.html", "ui/"+name+".html"))
 	}
 	return out
 }()
+
+// pageFuncs are the helpers the page templates use.
+var pageFuncs = template.FuncMap{
+	// fieldError bundles an error message with the id an input's
+	// aria-describedby points at.
+	"fieldError": func(id, message string) fieldErrorView { return fieldErrorView{ID: id, Message: message} },
+}
+
+type fieldErrorView struct{ ID, Message string }
 
 // pageSteps lists the steps each page can show; the first is the default.
 // Steps marked by a link token ("reset", "link") are only shown when the
@@ -47,6 +56,10 @@ type pageData struct {
 	Redirect  string
 	CSRFToken string
 	Error     string
+	// ErrorField is the input the error is about; ErrorPlaced reports that
+	// the page shows the message under that input instead of in the alert.
+	ErrorField  string
+	ErrorPlaced bool
 
 	Links pageLinks
 	// Actions are the POST endpoints the page's forms submit to.
@@ -88,6 +101,7 @@ type credentialsView struct {
 type fieldView struct {
 	ID, Name, Label, Type, Placeholder, Autocomplete string
 	IsPassword                                       bool
+	Error                                            string // shown under the input
 }
 
 // errorMessages maps the error codes a no-JS form post is redirected with.
@@ -208,7 +222,11 @@ func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page 
 		d.Token = ""
 	}
 	d.Step = pickStep(page, q.Get("step"), d.Token != "", d.Email != "")
+	if d.Error != "" && fieldName.MatchString(q.Get("field")) {
+		d.ErrorField = q.Get("field")
+	}
 	fill(&d)
+	placeFieldError(&d)
 
 	var buf bytes.Buffer
 	if err := pageTemplates[page].ExecuteTemplate(&buf, "layout", d); err != nil {
@@ -225,6 +243,24 @@ func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page 
 	h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'nonce-"+d.Nonce+
 		"'; img-src 'self' data: https:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	_, _ = w.Write(buf.Bytes())
+}
+
+// placeFieldError puts a no-JS error under its input when the page shows
+// that input; otherwise the error stays in the alert at the top.
+func placeFieldError(d *pageData) {
+	if d.ErrorField == "" {
+		return
+	}
+	if d.Credentials != nil {
+		for i := range d.Credentials.Fields {
+			if d.Credentials.Fields[i].Name == d.ErrorField {
+				d.Credentials.Fields[i].Error = d.Error
+				d.ErrorPlaced = true
+			}
+		}
+		return
+	}
+	d.ErrorPlaced = (d.ErrorField == inputEmail && d.Step == stepRequest) || (d.ErrorField == stepCode && d.Step == stepCode)
 }
 
 // pickStep chooses the step to show from ?step=, falling back to the page's

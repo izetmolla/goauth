@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -283,6 +284,9 @@ func (a *Authorization) failure(w http.ResponseWriter, r *http.Request, page str
 		return
 	}
 	q := url.Values{"error": {code}}
+	if fieldName.MatchString(field) {
+		q.Set("field", field)
+	}
 	if step := r.PostFormValue(keyStep); step != "" {
 		q.Set(keyStep, step)
 	}
@@ -310,6 +314,9 @@ func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, pag
 	}
 	http.Redirect(w, r, path+"?"+q.Encode(), http.StatusSeeOther)
 }
+
+// fieldName matches the form field names an error may point at.
+var fieldName = regexp.MustCompile(`^[A-Za-z0-9_]{1,40}$`)
 
 // publicUser is the user shape returned to the browser after sign-in.
 func publicUser(u *OAuthUser) Map {

@@ -291,6 +291,16 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 }
 .ga-input input::placeholder { color: var(--ga-faint); }
 .ga-input input:focus { border-color: var(--ga-accent); box-shadow: 0 0 0 4px var(--ga-ring); }
+.ga-field-error {
+  display: flex; gap: 6px; align-items: flex-start;
+  margin: 0;
+  color: var(--ga-danger); font-size: 13px; line-height: 1.4;
+  animation: ga-err-in 0.18s ease-out;
+}
+.ga-field-error svg { flex: none; width: 15px; height: 15px; margin-top: 1px; }
+@keyframes ga-err-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.ga-input.is-shake, .ga-otp.is-shake { animation: ga-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
 .ga-input input[aria-invalid="true"] { border-color: var(--ga-danger); box-shadow: 0 0 0 4px color-mix(in oklab, var(--ga-danger) 18%, transparent); }
 .ga-input--password input { padding-right: 46px; }
 

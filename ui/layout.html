@@ -26,9 +26,9 @@
       <p class="ga-sub">{{template "sub" .}}</p>
     </header>
 
-    <div class="ga-alert" id="ga-error" role="alert" aria-live="assertive"{{if not .Error}} hidden{{end}}>
+    <div class="ga-alert" id="ga-error" role="alert" aria-live="assertive"{{if or (not .Error) .ErrorPlaced}} hidden{{end}}>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 4a1 1 0 0 1 1 1v3.5a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Zm0 8.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></svg>
-      <span id="ga-error-text">{{.Error}}</span>
+      <span id="ga-error-text">{{if not .ErrorPlaced}}{{.Error}}{{end}}</span>
     </div>
     <div class="ga-notice" id="ga-notice" role="status" aria-live="polite" hidden>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm3.7 6.2-4.2 4.6a1 1 0 0 1-1.46.03l-2-2a1 1 0 1 1 1.42-1.42l1.26 1.27 3.5-3.83a1 1 0 0 1 1.48 1.35Z"/></svg>
@@ -108,18 +108,25 @@
       <div class="ga-field">
         <label for="{{.ID}}">{{.Label}}</label>
         <div class="ga-input{{if .IsPassword}} ga-input--password{{end}}">
-          <input id="{{.ID}}" name="{{.Name}}" type="{{.Type}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}} autocomplete="{{.Autocomplete}}" required{{if eq .Type "email"}} inputmode="email" autocapitalize="none" spellcheck="false"{{end}}>
+          <input id="{{.ID}}" name="{{.Name}}" type="{{.Type}}"{{if .Placeholder}} placeholder="{{.Placeholder}}"{{end}} autocomplete="{{.Autocomplete}}" required{{if eq .Type "email"}} inputmode="email" autocapitalize="none" spellcheck="false"{{end}}{{if .Error}} aria-invalid="true" aria-describedby="{{.ID}}-error"{{end}}>
           {{- if .IsPassword}}{{template "reveal"}}{{end}}
         </div>
+        {{- if .Error}}{{template "fielderror" (fieldError (print .ID "-error") .Error)}}{{end}}
       </div>
+{{- end}}
+
+{{/* An error message under an input; goauth.js creates the same markup. */}}
+{{define "fielderror"}}
+        <p class="ga-field-error" id="{{.ID}}" role="alert"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 4a1 1 0 0 1 1 1v3.5a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Zm0 8.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></svg><span>{{.Message}}</span></p>
 {{- end}}
 
 {{define "email"}}
       <div class="ga-field">
         <label for="ga-email">Email</label>
         <div class="ga-input">
-          <input id="ga-email" name="email" type="email" value="{{.Email}}" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required>
+          <input id="ga-email" name="email" type="email" value="{{.Email}}" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required{{if and .ErrorPlaced (eq .ErrorField "email")}} aria-invalid="true" aria-describedby="ga-email-error"{{end}}>
         </div>
+        {{- if and .ErrorPlaced (eq .ErrorField "email")}}{{template "fielderror" (fieldError "ga-email-error" .Error)}}{{end}}
       </div>
 {{- end}}
 
@@ -155,7 +162,8 @@
         <label for="ga-code">{{if .Code.Numeric}}{{.Code.Length}}-digit code{{else}}{{.Code.Length}}-character code{{end}}</label>
         <input class="ga-code" id="ga-code" name="code" type="text" inputmode="{{if .Code.Numeric}}numeric{{else}}text{{end}}"
                autocomplete="one-time-code" maxlength="{{.Code.Length}}" data-length="{{.Code.Length}}"
-               autocapitalize="characters" spellcheck="false" required>
+               autocapitalize="characters" spellcheck="false" required{{if and .ErrorPlaced (eq .ErrorField "code")}} aria-invalid="true" aria-describedby="ga-code-error"{{end}}>
+        {{- if and .ErrorPlaced (eq .ErrorField "code")}}{{template "fielderror" (fieldError "ga-code-error" .Error)}}{{end}}
       </div>
 {{- end}}
 
