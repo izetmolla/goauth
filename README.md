@@ -201,4 +201,4 @@ See [`examples/README.md`](examples/README.md) for how to run and test them.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
