@@ -109,7 +109,7 @@ var errorMessages = map[string]string{
 // button, plus the password form of the first credentials provider.
 // Query parameters: redirectUrl (or callbackUrl), a same-origin target.
 func (a *Authorization) SignInPage(w http.ResponseWriter, r *http.Request) {
-	a.renderPage(w, r, formSignIn, true, func(d *pageData) {
+	a.renderPage(w, r, formSignIn, func(d *pageData) {
 		d.OAuth = a.oauthButtons()
 		if p := a.credentialsProvider(); p != nil {
 			d.Credentials = &credentialsView{
@@ -123,8 +123,8 @@ func (a *Authorization) SignInPage(w http.ResponseWriter, r *http.Request) {
 
 // RegisterPage implements GET {base}/register (Endpoints.EnableRegister).
 func (a *Authorization) RegisterPage(w http.ResponseWriter, r *http.Request) {
-	p := a.registerProvider()
-	a.renderPage(w, r, formReg, p != nil, func(d *pageData) {
+	a.renderPage(w, r, formReg, func(d *pageData) {
+		p := a.registerProvider()
 		d.OAuth = a.oauthButtons()
 		d.Credentials = &credentialsView{
 			ID:     p.ID(),
@@ -141,7 +141,7 @@ func (a *Authorization) RegisterPage(w http.ResponseWriter, r *http.Request) {
 // ForgotPasswordPage implements GET {base}/forgot and the reset link
 // landing page GET {base}/password/reset?email=…&token=….
 func (a *Authorization) ForgotPasswordPage(w http.ResponseWriter, r *http.Request) {
-	a.renderPage(w, r, formForgot, a.verify != nil && a.verify.reset.enabled, func(d *pageData) {
+	a.renderPage(w, r, formForgot, func(d *pageData) {
 		d.Code = a.codeView(&a.verify.reset)
 		d.ResendAction = pageActions[formForgot]
 		d.MinPassword = a.verify.opts.PasswordReset.MinPasswordLength
@@ -151,7 +151,7 @@ func (a *Authorization) ForgotPasswordPage(w http.ResponseWriter, r *http.Reques
 // OTPPage implements GET {base}/otp and the magic link landing page
 // GET {base}/otp/verify?email=…&token=….
 func (a *Authorization) OTPPage(w http.ResponseWriter, r *http.Request) {
-	a.renderPage(w, r, formOTP, a.verify != nil && a.verify.otp.enabled, func(d *pageData) {
+	a.renderPage(w, r, formOTP, func(d *pageData) {
 		d.Code = a.codeView(&a.verify.otp)
 		d.ResendAction = pageActions["otpSend"]
 	})
@@ -160,7 +160,7 @@ func (a *Authorization) OTPPage(w http.ResponseWriter, r *http.Request) {
 // VerifyEmailPage implements GET {base}/verify-email, including the
 // confirmation link landing page (?email=…&token=…).
 func (a *Authorization) VerifyEmailPage(w http.ResponseWriter, r *http.Request) {
-	a.renderPage(w, r, formVerify, a.verify != nil && a.verify.confirm.enabled, func(d *pageData) {
+	a.renderPage(w, r, formVerify, func(d *pageData) {
 		d.Code = a.codeView(&a.verify.confirm)
 		d.ResendAction = pageActions["verifySend"]
 	})
@@ -170,12 +170,12 @@ func (a *Authorization) VerifyEmailPage(w http.ResponseWriter, r *http.Request) 
 // and writes it with strict security headers. Link landing pages never act
 // on the token by themselves (email scanners prefetch links); the user
 // confirms with a button that POSTs it.
-func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page string, enabled bool, fill func(*pageData)) {
+func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page string, fill func(*pageData)) {
 	if a == nil {
 		writeError(w, http.StatusInternalServerError, ErrNotInitialized.Error())
 		return
 	}
-	if a.endpoints.DisablePages || !enabled {
+	if a.pagePath(page) == "" {
 		notFound(w)
 		return
 	}
@@ -259,20 +259,16 @@ var pageActions = map[string]string{
 }
 
 func (a *Authorization) pageLinks() pageLinks {
-	l := pageLinks{SignIn: DefaultBasePath + pageSignIn}
-	if a.registerProvider() != nil {
-		l.Register = DefaultBasePath + pageRegister
+	l := pageLinks{
+		// Your own sign-in URL when the built-in page is off.
+		SignIn:   a.signInPagePath(),
+		Register: a.pagePath(pageRegister),
+		OTP:      a.pagePath(pageOTP),
+		Verify:   a.pagePath(pageVerify),
 	}
-	if v := a.verify; v != nil {
-		if v.reset.enabled && a.credentialsProvider() != nil {
-			l.Forgot = DefaultBasePath + pageForgot
-		}
-		if v.otp.enabled {
-			l.OTP = DefaultBasePath + pageOTP
-		}
-		if v.confirm.enabled {
-			l.Verify = DefaultBasePath + pageVerify
-		}
+	// "Forgot password?" sits under the password field.
+	if a.credentialsProvider() != nil {
+		l.Forgot = a.pagePath(pageForgot)
 	}
 	return l
 }

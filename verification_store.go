@@ -74,7 +74,7 @@ func (a *Authorization) issueVerification(ctx context.Context, f *verifyFeature,
 	if f.code.Delivery.hasLink() {
 		token := randomString(32)
 		row.TokenHash = a.verify.tokenHash(f.kind, token)
-		msg.Link = origin + linkPath(f.kind) + "?" + url.Values{inputEmail: {email}, fieldToken: {token}}.Encode()
+		msg.Link = origin + a.pagePath(pageForKind(f.kind)) + "?" + url.Values{inputEmail: {email}, fieldToken: {token}}.Encode()
 	}
 	if err := a.verificationTable(ctx).Create(&row).Error; err != nil {
 		return nil, err
@@ -144,14 +144,15 @@ func (a *Authorization) revokeUserSessions(ctx context.Context, userID string) e
 	return err
 }
 
-// linkPath is the page a verification link opens.
-func linkPath(kind VerificationKind) string {
+// pageForKind is the page a verification link opens. Links are only sent
+// while that page is on (see New).
+func pageForKind(kind VerificationKind) string {
 	switch kind {
 	case KindPasswordReset:
-		return DefaultBasePath + "/password/reset"
+		return pageForgot
 	case KindEmailConfirmation:
-		return DefaultBasePath + "/verify-email"
+		return pageVerify
 	default:
-		return DefaultBasePath + "/otp/verify"
+		return pageOTP
 	}
 }

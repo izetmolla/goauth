@@ -73,8 +73,8 @@ auth, err := goauth.New(&goauth.Config{
 | `Providers` | none | See [Providers](../providers/overview.md). |
 | `ResolveUser` | none | Required before any OAuth sign-in can complete. |
 | `OnProviderConnect` | none | See [Provider connect](./provider-connect.md). |
-| `Endpoints` | sign-in on, sign-up off | Switch built-in endpoints and pages on/off. See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off). |
-| `UI` | none | Branding for the pages and emails. |
+| `Endpoints` | sign-in on, sign-up off | Switch built-in API endpoints on/off. See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off). |
+| `UI` | all pages off | Turn pages on (`EnableAllUI` or one by one), set their paths (`SignInEndpoint`, …) and branding for the pages and emails. |
 | `Verification` | all off | Password reset, email confirmation, one-time codes. See [verification](./verification.md). |
 | `KeepRefreshTokenServerSide` | `false` | Keep the refresh token out of the OAuth callback page; web clients refresh with the session cookie. See [Tokens and refresh](./tokens-and-refresh.md#keeping-the-refresh-token-out-of-the-browser). |
 

@@ -59,13 +59,13 @@ const (
 	keyStep = "step"
 )
 
-// Page paths of the built-in UI, relative to DefaultBasePath.
+// Names of the built-in pages; their paths come from pagePath.
 const (
-	pageSignIn   = "/signin"
-	pageRegister = "/register"
-	pageForgot   = "/forgot"
-	pageOTP      = "/otp"
-	pageVerify   = "/verify-email"
+	pageSignIn   = formSignIn
+	pageRegister = formReg
+	pageForgot   = formForgot
+	pageOTP      = formOTP
+	pageVerify   = formVerify
 )
 
 // formInput is a parsed form or JSON body.
@@ -273,7 +273,8 @@ func (a *Authorization) finishSignIn(w http.ResponseWriter, r *http.Request, pag
 // otherwise a redirect back to the page (no-JS form posts) carrying only an
 // error code, the step and the email.
 func (a *Authorization) failure(w http.ResponseWriter, r *http.Request, page string, status int, code, message, field string) {
-	if isTokenFlow(r) || wantsJSON(r) || a.endpoints.DisablePages {
+	path := a.pagePath(page)
+	if isTokenFlow(r) || wantsJSON(r) || path == "" {
 		body := Map{"message": message, "code": code}
 		if field != "" {
 			body["field"] = field
@@ -288,13 +289,14 @@ func (a *Authorization) failure(w http.ResponseWriter, r *http.Request, page str
 	if email := normalizeEmail(r.PostFormValue(inputEmail)); email != "" {
 		q.Set(inputEmail, email)
 	}
-	http.Redirect(w, r, DefaultBasePath+page+"?"+q.Encode(), http.StatusSeeOther)
+	http.Redirect(w, r, path+"?"+q.Encode(), http.StatusSeeOther)
 }
 
 // stepResponse moves a multi-step page forward: JSON for fetch clients, a
 // redirect to the page at that step otherwise.
 func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, page, step, email, message string, extra Map) {
-	if isTokenFlow(r) || wantsJSON(r) || a.endpoints.DisablePages {
+	path := a.pagePath(page)
+	if isTokenFlow(r) || wantsJSON(r) || path == "" {
 		body := Map{payloadType: keyStep, keyStep: step, inputEmail: email, "message": message}
 		for k, v := range extra {
 			body[k] = v
@@ -306,7 +308,7 @@ func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, pag
 	if email != "" {
 		q.Set(inputEmail, email)
 	}
-	http.Redirect(w, r, DefaultBasePath+page+"?"+q.Encode(), http.StatusSeeOther)
+	http.Redirect(w, r, path+"?"+q.Encode(), http.StatusSeeOther)
 }
 
 // publicUser is the user shape returned to the browser after sign-in.

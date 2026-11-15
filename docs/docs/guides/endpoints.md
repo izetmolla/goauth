@@ -13,13 +13,13 @@ description: The routes served by auth.Handler(), their parameters and responses
 | any | `/api/authorization/provider/{id}` | `auth.HandleSignIn` | Start sign-in |
 | any | `/api/authorization/provider/{id}/callback` | `auth.HandleCallback` | OAuth callback |
 | `POST` | `/api/authorization/provider/{id}/register` | `auth.HandleRegister` | Credentials sign-up (off by default) |
-| `GET` | `/api/authorization/register` | `auth.RegisterPage` | Sign-up page (off by default) |
+| `GET` | `/api/authorization/register` (`UI.RegisterEndpoint`) | `auth.RegisterPage` | Sign-up page (off by default) |
 | | `/forgot`, `/password/*`, `/otp*`, `/verify-email*` | | Password reset, one-time codes, email confirmation (off by default, see [verification](./verification.md#4-endpoints)) |
 | `GET` | `/api/authorization/csrf` | `auth.GetCSRFToken` | CSRF token for custom forms |
-| `GET` | `/api/authorization/signin` | `auth.SignInPage` | Built-in sign-in page ([details](./sign-in-page.md)) |
+| `GET` | `/api/authorization/signin` (`UI.SignInEndpoint`) | `auth.SignInPage` | Built-in sign-in page, off by default ([details](./sign-in-page.md)) |
 | `GET` | `/api/authorization/assets/{file}` | | The page's CSS and JS |
 
-Sign-in endpoints are on by default; sign-up and the verification endpoints are off until enabled. See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off).
+Sign-in APIs are on by default. Sign-up, the verification endpoints and every HTML page are off until enabled, and the pages can be served at your own paths (`UI.SignInEndpoint` and friends). See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off).
 
 ## Mounting
 

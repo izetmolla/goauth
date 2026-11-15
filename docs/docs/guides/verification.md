@@ -160,19 +160,26 @@ Some mail systems open every link in an email to scan it. If opening a link did 
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `{base}/forgot` | Forgot-password page |
+API endpoints, present while the feature is enabled:
+
+| Method | Path | Purpose |
+|---|---|---|
 | `POST` | `{base}/password/forgot` | Send reset email (`email`) |
-| `GET` | `{base}/password/reset?email&token` | Reset link landing page |
 | `POST` | `{base}/password/reset` | Set password (`email`, `code` or `token`, `password`) |
-| `GET` | `{base}/otp` | One-time code page |
 | `POST` | `{base}/otp/send` | Send code (`email`) |
-| `GET` | `{base}/otp/verify?email&token` | Magic link landing page |
 | `POST` | `{base}/otp/verify` | Sign in (`email`, `code` or `token`) |
-| `GET` | `{base}/verify-email` | Confirm page (also the link landing page) |
 | `POST` | `{base}/verify-email/send` | (Re)send confirmation (`email`) |
 | `POST` | `{base}/verify-email` | Confirm (`email`, `code` or `token`) |
 
-They exist only while the feature is enabled; otherwise they answer `404`. Every POST needs the CSRF token (`csrfToken`) unless the request sends `X-Auth-Flow: token`.
+Pages, **off by default** (turn on with `UI.EnableAllUI` or one by one, see [Built-in pages](./sign-in-page.md)):
+
+| Page | Default path | Change with | Also the landing page for |
+|---|---|---|---|
+| Forgot password (`UI.EnableForgotPasswordPage`) | `{base}/forgot` | `UI.ForgotPasswordEndpoint` | Reset links |
+| One-time code (`UI.EnableOTPPage`) | `{base}/otp` | `UI.OTPEndpoint` | Magic links |
+| Verify email (`UI.EnableVerifyPage`) | `{base}/verify-email` | `UI.VerifyEndpoint` | Confirmation links |
+
+Endpoints that are off answer `404`. Every POST needs the CSRF token (`csrfToken`) unless the request sends `X-Auth-Flow: token`.
 
 With `Accept: application/json`, the responses look like this:
 
@@ -183,7 +190,9 @@ With `Accept: application/json`, the responses look like this:
 
 `step` is `code` (enter the code), `sent` (check your email), or `done` (finished). A successful one-time sign-in returns the same `sign_in` payload as a password sign-in. Errors use `{"message", "code", "field"}`, for example `INVALID_CODE`, `WEAK_PASSWORD` or `EMAIL_NOT_VERIFIED`.
 
-If you build your own UI with `Endpoints.DisablePages`, links have nowhere to land, so set `Delivery: goauth.DeliverCode`. `New` tells you if you forget.
+### Links need their page
+
+A link in an email opens that feature's page, so a link can only be sent while the page is on. If the page is off and you haven't set `Delivery`, the emails carry **only a code**, which suits your own UI or a mobile app calling the APIs above. If you set `Delivery` to a link option while the page is off, `New` returns an error.
 
 ## 5. Email templates
 

@@ -85,12 +85,11 @@ func main() {
 | `ANY` | `{base}/provider/{provider}/callback` | `HandleCallback` | OAuth/OIDC callback; validates state/PKCE/nonce, exchanges the code, resolves the user, creates the session, and renders the callback page |
 | `POST` | `{base}/provider/{provider}/register` | `HandleRegister` | Credentials sign-up (`CredentialsProvider.Register`), then signs the user in. **Off by default** (`Endpoints.EnableRegister`) |
 | `GET` | `{base}/csrf` | `GetCSRFToken` | CSRF token for custom credentials forms |
-| `GET` | `{base}/signin` | `SignInPage` | Built-in sign-in page (embedded HTML, CSS, JS) — see [Built-in pages](docs/docs/guides/sign-in-page.md) |
-| `GET` | `{base}/register`, `/forgot`, `/otp`, `/verify-email` | `RegisterPage`, … | Sign-up, forgot password, one-time code and verify-email pages. **Off by default** |
+| `GET` | `UI.SignInEndpoint`, `UI.RegisterEndpoint`, `UI.ForgotPasswordEndpoint`, `UI.OTPEndpoint`, `UI.VerifyEndpoint` (defaults `{base}/signin`, `/register`, `/forgot`, `/otp`, `/verify-email`) | `SignInPage`, `RegisterPage`, … | Built-in pages (embedded HTML, CSS, JS). **All off by default**: turn on with `UI.EnableAllUI` or one by one — see [Built-in pages](docs/docs/guides/sign-in-page.md) |
 | `POST` | `{base}/password/*`, `/otp/*`, `/verify-email*` | `HandleForgotPassword`, … | Password reset, one-time-code sign-in and email confirmation — see [Verification](docs/docs/guides/verification.md). **Off by default** |
 | `GET` | `{base}/assets/{file}` | — | The page's versioned CSS/JS |
 
-Sign-in is on by default; sign-up (`Endpoints.EnableRegister`) and the verification features (`Config.Verification`) are off until you enable them. Switch built-in parts off with `Config.Endpoints` (`DisablePages`, `DisableCredentials`, `DisableCSRF`, `DisableProviders`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
+The sign-in APIs are on by default. Sign-up (`Endpoints.EnableRegister`), the verification features (`Config.Verification`) and every HTML page (`UI.EnableAllUI`, or `UI.EnableSignInPage`, `EnableRegisterPage`, `EnableForgotPasswordPage`, `EnableOTPPage`, `EnableVerifyPage`) are off until you enable them. Serve the pages at your own paths with `UI.SignInEndpoint: "/sign-in"` and friends. Switch built-in APIs off with `Config.Endpoints` (`DisableCredentials`, `DisableCSRF`, `DisableProviders`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
 
 All SQL goes through GORM's builder with portable column types, tested against the PostgreSQL, MySQL, SQL Server and SQLite dialects.
 

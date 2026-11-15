@@ -6,33 +6,31 @@ import (
 	"strings"
 )
 
-// Handler returns an http.Handler that serves every enabled goauth endpoint
-// under DefaultBasePath.
+// Handler returns an http.Handler that serves every enabled goauth endpoint.
 //
-// Always on (switch off in Config.Endpoints):
+// API endpoints, under DefaultBasePath. On by default (switch off in
+// Config.Endpoints):
 //
 //	GET  {base}/providers                      -> GetProviders
 //	ANY  {base}/provider/{provider}            -> HandleSignIn (OAuth start, credentials sign-in)
 //	ANY  {base}/provider/{provider}/callback   -> HandleCallback
 //	GET  {base}/csrf                           -> GetCSRFToken
-//	GET  {base}/signin                         -> SignInPage
-//	GET  {base}/assets/{file}                  -> the pages' CSS/JS
 //
 // Off by default (Endpoints.EnableRegister, Config.Verification):
 //
-//	GET  {base}/register                       -> RegisterPage
 //	POST {base}/provider/{provider}/register   -> HandleRegister
-//	GET  {base}/forgot                         -> ForgotPasswordPage
 //	POST {base}/password/forgot                -> HandleForgotPassword
-//	GET  {base}/password/reset                 -> ForgotPasswordPage (reset link)
 //	POST {base}/password/reset                 -> HandleResetPassword
-//	GET  {base}/otp                            -> OTPPage
 //	POST {base}/otp/send                       -> HandleOTPSend
-//	GET  {base}/otp/verify                     -> OTPPage (magic link)
 //	POST {base}/otp/verify                     -> HandleOTPVerify
-//	GET  {base}/verify-email                   -> VerifyEmailPage (and its link)
-//	POST {base}/verify-email                   -> HandleVerifyEmail
 //	POST {base}/verify-email/send              -> HandleVerifyEmailSend
+//	POST {base}/verify-email                   -> HandleVerifyEmail
+//
+// HTML pages, all off by default (Config.UI): sign-in, register, forgot
+// password, one-time code and verify email, each at its configured path
+// (UIOptions.SignInEndpoint, ...), plus GET {base}/assets/{file} for their
+// CSS and JS. Pages outside DefaultBasePath must be routed to this handler
+// as well.
 //
 // Endpoints that are off are not registered (they answer 404).
 // It can be mounted on any router that speaks net/http, including Fiber via
@@ -41,11 +39,10 @@ func (a *Authorization) Handler() http.Handler {
 	mux := http.NewServeMux()
 	base := DefaultBasePath
 	e := a.endpoints
-	pages := !e.DisablePages
 	route := func(pattern string, h http.HandlerFunc) { mux.HandleFunc(pattern, h) }
-	page := func(pattern string, h http.HandlerFunc) {
-		if pages {
-			mux.HandleFunc(pattern, h)
+	page := func(name string, h http.HandlerFunc) {
+		if p := a.pagePath(name); p != "" {
+			mux.HandleFunc("GET "+p, h)
 		}
 	}
 
@@ -57,31 +54,38 @@ func (a *Authorization) Handler() http.Handler {
 	if !e.DisableCSRF {
 		route("GET "+base+"/csrf", a.GetCSRFToken)
 	}
-	page("GET "+base+"/signin", a.SignInPage)
-	page("GET "+base+"/assets/{file}", serveAsset)
-
 	if a.registerProvider() != nil {
 		route("POST "+base+"/provider/{provider}/register", a.HandleRegister)
-		page("GET "+base+pageRegister, a.RegisterPage)
 	}
 	if v := a.verify; v != nil {
 		if v.reset.enabled {
 			route("POST "+base+"/password/forgot", a.HandleForgotPassword)
 			route("POST "+base+"/password/reset", a.HandleResetPassword)
-			page("GET "+base+pageForgot, a.ForgotPasswordPage)
-			page("GET "+base+"/password/reset", a.ForgotPasswordPage)
 		}
 		if v.otp.enabled {
 			route("POST "+base+"/otp/send", a.HandleOTPSend)
 			route("POST "+base+"/otp/verify", a.HandleOTPVerify)
-			page("GET "+base+pageOTP, a.OTPPage)
-			page("GET "+base+"/otp/verify", a.OTPPage)
 		}
 		if v.confirm.enabled {
 			route("POST "+base+"/verify-email/send", a.HandleVerifyEmailSend)
-			route("POST "+base+pageVerify, a.HandleVerifyEmail)
-			page("GET "+base+pageVerify, a.VerifyEmailPage)
+			route("POST "+base+"/verify-email", a.HandleVerifyEmail)
 		}
+	}
+
+	page(pageSignIn, a.SignInPage)
+	page(pageRegister, a.RegisterPage)
+	page(pageForgot, a.ForgotPasswordPage)
+	page(pageOTP, a.OTPPage)
+	page(pageVerify, a.VerifyEmailPage)
+	if len(a.pages) > 0 {
+		route("GET "+base+"/assets/{file}", serveAsset)
+	}
+	// Links in emails sent by v1.2.0 pointed here; send them to the page.
+	if p := a.pagePath(pageForgot); p != "" && p != base+"/password/reset" {
+		route("GET "+base+"/password/reset", a.ForgotPasswordPage)
+	}
+	if p := a.pagePath(pageOTP); p != "" && p != base+"/otp/verify" {
+		route("GET "+base+"/otp/verify", a.OTPPage)
 	}
 	return mux
 }

@@ -89,6 +89,7 @@ type Authorization struct {
 	endpoints EndpointOptions
 	ui        UIOptions
 	verify    *verification
+	pages     map[string]string // page name -> path, only pages that are on
 
 	// Resolved once in New so hot paths never re-parse configuration.
 	accessTTL  time.Duration
@@ -139,19 +140,12 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err != nil {
 		return nil, fmt.Errorf("verification: %w", err)
 	}
-	if cfg.Endpoints.DisablePages {
-		for _, f := range []verifyFeature{verify.reset, verify.confirm, verify.otp} {
-			if f.enabled && f.code.Delivery.hasLink() {
-				return nil, fmt.Errorf("verification: %s sends links, which open the built-in pages; use Delivery: goauth.DeliverCode when Endpoints.DisablePages is set", f.kind)
-			}
-		}
-	}
 
 	var cookies CookieOptions
 	if cfg.Cookies != nil {
 		cookies = *cfg.Cookies
 	}
-	return &Authorization{
+	a := &Authorization{
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
 		method:     method,
@@ -179,7 +173,31 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		endpoints:                  cfg.Endpoints,
 		ui:                         cfg.UI,
 		verify:                     verify,
-	}, nil
+	}
+	if err := a.resolvePages(cfg.UI); err != nil {
+		return nil, err
+	}
+	// A link must open a page. With a feature's page off, its emails carry
+	// only a code, unless links were asked for explicitly.
+	for _, f := range []struct {
+		feat     *verifyFeature
+		page     string
+		delivery Delivery
+		field    string
+	}{
+		{&verify.reset, pageForgot, cfg.Verification.PasswordReset.Code.Delivery, "PasswordReset"},
+		{&verify.confirm, pageVerify, cfg.Verification.EmailConfirmation.Code.Delivery, "EmailConfirmation"},
+		{&verify.otp, pageOTP, cfg.Verification.OTPSignIn.Code.Delivery, "OTPSignIn"},
+	} {
+		if !f.feat.enabled || !f.feat.code.Delivery.hasLink() || a.pagePath(f.page) != "" {
+			continue
+		}
+		if f.delivery != DeliverDefault {
+			return nil, fmt.Errorf("verification: %s.Code.Delivery sends links, which open the %s page; turn that page on in UIOptions (or EnableAllUI), or use Delivery: goauth.DeliverCode", f.field, f.page)
+		}
+		f.feat.code.Delivery = DeliverCode
+	}
+	return a, nil
 }
 
 func (a *Authorization) WithJWTSecret(secret string) *Authorization {

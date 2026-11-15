@@ -7,13 +7,17 @@ description: The built-in sign-in, sign-up, forgot-password, one-time-code and v
 
 goauth ships ready-made pages, like Auth.js's built-in pages. The HTML, CSS and JS are compiled into your binary with `embed`, so there is nothing to deploy and no external requests.
 
-| Page | Path | Default | Turn on/off |
-|---|---|---|---|
-| Sign in | `GET /api/authorization/signin` | **on** | `Endpoints.DisablePages` |
-| Sign up | `GET /api/authorization/register` | off | `Endpoints.EnableRegister` |
-| Forgot password | `GET /api/authorization/forgot` | off | `Verification.PasswordReset.Enabled` |
-| One-time code | `GET /api/authorization/otp` | off | `Verification.OTPSignIn.Enabled` |
-| Verify email | `GET /api/authorization/verify-email` | off | `Verification.EmailConfirmation.Enabled` |
+Every page is **off by default**. Turn them on one by one, or all at once with `UI.EnableAllUI`:
+
+| Page | Turn on | Default path | Change path with | Needs |
+|---|---|---|---|---|
+| Sign in | `UI.EnableSignInPage` | `/api/authorization/signin` | `UI.SignInEndpoint` | |
+| Sign up | `UI.EnableRegisterPage` | `/api/authorization/register` | `UI.RegisterEndpoint` | `Endpoints.EnableRegister` and a provider with `Register` |
+| Forgot password | `UI.EnableForgotPasswordPage` | `/api/authorization/forgot` | `UI.ForgotPasswordEndpoint` | `Verification.PasswordReset.Enabled` |
+| One-time code | `UI.EnableOTPPage` | `/api/authorization/otp` | `UI.OTPEndpoint` | `Verification.OTPSignIn.Enabled` |
+| Verify email | `UI.EnableVerifyPage` | `/api/authorization/verify-email` | `UI.VerifyEndpoint` | `Verification.EmailConfirmation.Enabled` |
+
+`EnableAllUI` turns on every page whose feature is on and skips the others. Turning on a single page whose feature is off makes `New` return an error naming what's missing.
 
 The sign-in page lists every configured provider as a **Continue with …** button and the email and password form of the first credentials provider. It links to the other pages only when they are on: **Forgot password?** under the password, **Email me a sign-in code**, and a **Sign in / Sign up** switch. Password reset, confirmation and one-time codes are covered in [Password reset, email confirmation and one-time codes](./verification.md).
 
@@ -27,18 +31,47 @@ The sign-in page lists every configured provider as a **Continue with …** butt
   - the provider used last time gets a **Last used** badge
 - After sign-in the session is stored in `localStorage` (`authorization-storage`) exactly like the OAuth callback page does, and the browser goes to `redirectUrl`.
 
-## Enable it
-
-It is on by default. Mount `auth.Handler()` as usual and send users to the page:
+## Turn the pages on
 
 ```go
-mux.Handle(goauth.DefaultBasePath+"/", auth.Handler())
-
 auth, err := goauth.New(&goauth.Config{
 	// ...
-	SignInRedirectURL: goauth.DefaultBasePath + "/signin", // where UseWEBAuthorization sends signed-out users
+	UI: goauth.UIOptions{
+		EnableAllUI: true, // or EnableSignInPage: true, EnableOTPPage: true, ...
+	},
 })
+
+mux.Handle(goauth.DefaultBasePath+"/", auth.Handler())
 ```
+
+### Your own paths
+
+Serve the pages wherever you like, for example at the top level of your site:
+
+```go
+UI: goauth.UIOptions{
+	EnableAllUI:            true,
+	SignInEndpoint:         "/sign-in",
+	RegisterEndpoint:       "/sign-up",
+	ForgotPasswordEndpoint: "/forgot-password",
+	OTPEndpoint:            "/login/code",
+	VerifyEndpoint:         "/verify",
+},
+```
+
+`auth.Handler()` serves the pages at those paths, so route them to it as well as the base path. The simplest way is to mount it at the root:
+
+```go
+mux.Handle("/", auth.Handler()) // your more specific routes still win
+// or route only what you need:
+mux.Handle(goauth.DefaultBasePath+"/", auth.Handler())
+mux.Handle("/sign-in", auth.Handler())
+mux.Handle("/sign-up", auth.Handler())
+```
+
+Everything follows the configured paths: links between pages, redirects after a form post without JavaScript, the links in verification emails, and the "back to sign in" link on the OAuth callback page. Set `SignInRedirectURL` to the same path so `UseWEBAuthorization` sends signed-out users there. Its default, `/sign-in`, already matches the example above.
+
+Paths must be clean absolute paths (`/sign-in`, not `sign-in`, `/sign-in/` or `/x/{id}`), distinct from each other, and must not take an API route such as `{base}/csrf`. `New` reports any problem. The pages' CSS and JS stay at `{base}/assets/`.
 
 Query parameters:
 
@@ -96,12 +129,12 @@ credentials.New(credentials.Options{
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `{base}/signin` | Sign-in page |
-| `GET` | `{base}/register` | Sign-up page (`EnableRegister`) |
-| `GET` | `{base}/assets/{file}` | The pages' CSS and JS (versioned, cached for a year) |
+| `GET` | `UI.SignInEndpoint` (default `{base}/signin`) | Sign-in page (`UI.EnableSignInPage`) |
+| `GET` | `UI.RegisterEndpoint` (default `{base}/register`) | Sign-up page (`UI.EnableRegisterPage`) |
+| `GET` | `{base}/assets/{file}` | The pages' CSS and JS, served while any page is on (versioned, cached for a year) |
 | `GET` | `{base}/csrf` | `{"csrfToken": "..."}` for single-page apps with their own form |
 | `POST` | `{base}/provider/{id}` | Credentials sign-in |
-| `POST` | `{base}/provider/{id}/register` | Credentials sign-up (`EnableRegister`) |
+| `POST` | `{base}/provider/{id}/register` | Credentials sign-up (`Endpoints.EnableRegister`) |
 
 The forgot-password, one-time-code and verify-email endpoints are listed in [verification](./verification.md#4-endpoints).
 
@@ -118,16 +151,20 @@ Mobile and API clients that do not use cookies send `X-Auth-Flow: token`. That s
 
 ## Switching parts on and off
 
-Sign-in is on by default; everything else is off until you turn it on:
+The sign-in **APIs** (OAuth, credentials, `/providers`, `/csrf`) are on by default. Sign-up, the verification features and **every HTML page** are off until you turn them on:
 
 ```go
 goauth.Config{
 	Endpoints: goauth.EndpointOptions{
-		EnableRegister:     true, // sign-up page and endpoint (off by default)
-		DisablePages:       true, // no HTML pages or /assets; JSON endpoints stay
+		EnableRegister:     true, // sign-up API (off by default)
 		DisableCredentials: true, // no password sign-in at all
 		DisableCSRF:        true, // no /csrf JSON endpoint (the pages still work)
 		DisableProviders:   true, // no /providers JSON endpoint
+	},
+	UI: goauth.UIOptions{
+		EnableAllUI: true, // every page whose feature is on
+		// or one by one:
+		// EnableSignInPage, EnableRegisterPage, EnableForgotPasswordPage, EnableOTPPage, EnableVerifyPage
 	},
 	Verification: goauth.VerificationOptions{
 		PasswordReset:     goauth.PasswordResetOptions{Enabled: true},     // /forgot
@@ -138,7 +175,9 @@ goauth.Config{
 }
 ```
 
-An endpoint that is off answers `404`, including when you mount its exported handler yourself (`auth.SignInPage`, `auth.RegisterPage`, `auth.ForgotPasswordPage`, `auth.OTPPage`, `auth.VerifyEmailPage`, `auth.HandleRegister`, …). The pages link to each other only when the target is on.
+An endpoint or page that is off answers `404` (or `405` where only a POST API lives at that path), including when you mount its exported handler yourself (`auth.SignInPage`, `auth.RegisterPage`, `auth.ForgotPasswordPage`, `auth.OTPPage`, `auth.VerifyEmailPage`, `auth.HandleRegister`, …). Pages link to each other only when the target page is on. When the sign-in page is off, "Back to sign in" points to `SignInRedirectURL`.
+
+`Endpoints.DisablePages` still forces every page off. It is deprecated, since pages are off unless you turn them on.
 
 ## Branding
 

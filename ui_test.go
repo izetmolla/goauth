@@ -16,6 +16,7 @@ func uiAuth(t *testing.T, cfg Config) *Authorization {
 	t.Helper()
 	cfg.JWTSecret = "ui-secret-ui-secret-ui-secret-ui"
 	cfg.DB = &gorm.DB{}
+	cfg.UI.EnableAllUI = true // pages are off by default
 	if cfg.Providers == nil {
 		cfg.Providers = []Provider{
 			&OAuthProvider{ProviderID: "google", DisplayName: "Google"},

@@ -99,17 +99,33 @@ func TestVerificationOptionsValidation(t *testing.T) {
 }
 
 func TestLinksNeedPages(t *testing.T) {
-	_, err := New(&Config{
-		JWTSecret: "s", DB: &gorm.DB{},
-		Endpoints: EndpointOptions{DisablePages: true},
-		Verification: VerificationOptions{
-			OTPSignIn: OTPSignInOptions{Enabled: true},
-			FindUser:  func(context.Context, string) (*OAuthUser, error) { return nil, nil },
-			Send:      func(context.Context, *VerificationMessage) error { return nil },
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "DeliverCode") {
-		t.Fatalf("got %v", err)
+	cfg := func(d Delivery) *Config {
+		return &Config{
+			JWTSecret: "s", DB: &gorm.DB{},
+			Verification: VerificationOptions{
+				OTPSignIn: OTPSignInOptions{Enabled: true, Code: CodeOptions{Delivery: d}},
+				FindUser:  func(context.Context, string) (*OAuthUser, error) { return nil, nil },
+				Send:      func(context.Context, *VerificationMessage) error { return nil },
+			},
+		}
+	}
+	// Links asked for explicitly, but the OTP page is off: refused.
+	if _, err := New(cfg(DeliverLink)); err == nil || !strings.Contains(err.Error(), "DeliverCode") {
+		t.Fatalf("explicit links without a page: %v", err)
+	}
+	// Default delivery with the page off: emails fall back to codes only.
+	a, err := New(cfg(DeliverDefault))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := a.verify.otp.code.Delivery; d != DeliverCode {
+		t.Fatalf("delivery = %v, want DeliverCode", d)
+	}
+	// With the page on, the default (code + link) stays.
+	c := cfg(DeliverDefault)
+	c.UI.EnableOTPPage = true
+	if a, err = New(c); err != nil || a.verify.otp.code.Delivery != DeliverCodeAndLink {
+		t.Fatalf("with page: %v %v", err, a.verify.otp.code.Delivery)
 	}
 }
 
