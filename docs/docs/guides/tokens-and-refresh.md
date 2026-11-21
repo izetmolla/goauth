@@ -41,6 +41,19 @@ Every sign-in returns two JWTs, signed with `JWTSecret`:
 }
 ```
 
+### Impersonation (`logged_by`)
+
+When a session was created with [Login as](./login-as.md), both tokens also carry:
+
+```json
+"logged_by": {
+  "id": "admin-uuid",
+  "name": "Ada Admin"
+}
+```
+
+`user_id` and `roles` remain those of the **target** user. On refresh, goauth keeps `logged_by` from the refresh token or the session row.
+
 | | Default | Config field |
 |---|---|---|
 | Access token lifetime | `60s` | `AccessTokenDuration` |

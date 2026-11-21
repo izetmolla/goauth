@@ -152,12 +152,19 @@ func fetchUserInfo(ctx context.Context, p *OAuthProvider, tokens *TokenSet) (Pro
 	if tokens == nil {
 		return nil, errors.New("tokens are required")
 	}
+	if p.FetchUserInfo != nil {
+		return p.FetchUserInfo(ctx, *tokens)
+	}
 	if p.UserInfoURL == "" {
 		// OIDC providers without a userinfo endpoint rely on the id_token; the
 		// provider's Profile function can parse it from tokens.
 		return Profile{}, nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.UserInfoURL, nil)
+	method := p.UserInfoMethod
+	if method == "" {
+		method = http.MethodGet
+	}
+	req, err := http.NewRequestWithContext(ctx, method, p.UserInfoURL, nil)
 	if err != nil {
 		return nil, err
 	}

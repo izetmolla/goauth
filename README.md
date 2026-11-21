@@ -1,13 +1,15 @@
 # goauth
 
-Framework-agnostic authentication and authorization module for Go, built entirely on `net/http`. It provides OAuth 2.0 / OpenID Connect sign-in (Google, Azure AD, ...), credentials and LDAP authentication, JWT access/refresh tokens, database-backed sessions (GORM) with optional Redis caching, cookie handling, CSRF protection, and role-based access control.
+Framework-agnostic authentication and authorization module for Go, built entirely on `net/http`. It provides OAuth 2.0 / OpenID Connect sign-in (Google, Azure AD, ...), credentials authentication, JWT access/refresh tokens, database-backed sessions (GORM) with optional Redis caching, cookie handling, CSRF protection, and role-based access control.
 
 Because every handler is a plain `http.Handler` and every middleware is a standard `func(http.Handler) http.Handler`, goauth plugs into **any** Go web framework — the standard library, [Fiber](examples/fiber/README.md), [Gin](examples/gin/README.md), [Echo](examples/echo/README.md), chi, gorilla/mux, and so on.
 
 ## Features
 
 - **OAuth 2.0 / OIDC sign-in** with discovery, PKCE, `state`, and `nonce` checks
-- **Provider presets**: [Google](providers/google/README.md), [Azure AD / Entra ID](providers/azuread/README.md), [Credentials](providers/credentials/README.md), [LDAP / Active Directory](providers/ldap/README.md)
+- **Provider presets**: [Google](providers/google/README.md), [Azure AD / Entra ID](providers/azuread/README.md), [Credentials](providers/credentials/README.md), [Passkey](providers/passkey/README.md)
+- **Authenticator MFA (TOTP)**: Google / Microsoft Authenticator–style codes — off by default, GORM-backed per-user enable/disable ([guide](docs/docs/guides/mfa-totp.md))
+- **Login as**: admin impersonation via `{base}/login_as?user_id=` — off by default, `logged_by` on sessions and JWTs ([guide](docs/docs/guides/login-as.md))
 - **JWT tokens**: HS256/HS384/HS512 access + refresh token pairs with configurable lifetimes (`"60s"`, `"15m"`, `"7d"`, `"1y"`, ...)
 - **Sessions**: persisted via GORM (any SQL database), optionally cached in Redis
 - **Two protection modes**: Bearer-JWT for APIs and session-cookie (with sign-in redirect) for server-rendered pages
@@ -87,6 +89,8 @@ func main() {
 | `GET` | `{base}/csrf` | `GetCSRFToken` | CSRF token for custom credentials forms |
 | `GET` | `UI.SignInEndpoint`, `UI.RegisterEndpoint`, `UI.ForgotPasswordEndpoint`, `UI.OTPEndpoint`, `UI.VerifyEndpoint` (defaults `{base}/signin`, `/register`, `/forgot`, `/otp`, `/verify-email`) | `SignInPage`, `RegisterPage`, … | Built-in pages (embedded HTML, CSS, JS). **All off by default**: turn on with `UI.EnableAllUI` or one by one — see [Built-in pages](docs/docs/guides/sign-in-page.md) |
 | `POST` | `{base}/password/*`, `/otp/*`, `/verify-email*` | `HandleForgotPassword`, … | Password reset, one-time-code sign-in and email confirmation — see [Verification](docs/docs/guides/verification.md). **Off by default** |
+| `GET`/`POST` | `{base}/mfa/totp/*` | `HandleTOTPStatus`, … | Authenticator MFA enroll / disable / verify — see [MFA TOTP](docs/docs/guides/mfa-totp.md). **Off by default** |
+| `GET`/`POST` | `{base}/login_as` | `HandleLoginAs` | Admin login-as another user — see [Login as](docs/docs/guides/login-as.md). **Off by default** |
 | `GET` | `{base}/assets/{file}` | — | The page's versioned CSS/JS |
 
 The sign-in APIs are on by default. Sign-up (`Endpoints.EnableRegister`), the verification features (`Config.Verification`) and every HTML page (`UI.EnableAllUI`, or `UI.EnableSignInPage`, `EnableRegisterPage`, `EnableForgotPasswordPage`, `EnableOTPPage`, `EnableVerifyPage`) are off until you enable them. Serve the pages at your own paths with `UI.SignInEndpoint: "/sign-in"` and friends. Switch built-in APIs off with `Config.Endpoints` (`DisableCredentials`, `DisableCSRF`, `DisableProviders`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
@@ -195,7 +199,7 @@ See [`examples/README.md`](examples/README.md) for how to run and test them.
 | Google | [`providers/google`](providers/google/README.md) | OIDC (discovery, PKCE + state + nonce) |
 | Azure AD / Entra ID | [`providers/azuread`](providers/azuread/README.md) | OIDC v2.0 endpoints, Microsoft Graph profile |
 | Credentials | [`providers/credentials`](providers/credentials/README.md) | Username/password (custom `Authorize` function) |
-| LDAP / Active Directory | [`providers/ldap`](providers/ldap/README.md) | Directory bind + attribute/role mapping |
+| Passkey | [`providers/passkey`](providers/passkey/README.md) | WebAuthn (opt-in) |
 
 [`providers/README.md`](providers/README.md) explains the provider model and how to write a custom provider (any OAuth/OIDC service can be configured with a plain `goauth.OAuthProvider` struct).
 

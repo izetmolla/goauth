@@ -113,3 +113,17 @@ To remove access **immediately**, also sign the user out by marking their sessio
 
 - Use a few coarse roles (`admin`, `hr`, `finance`, `support`) and put read/write on the grant, rather than creating `hr-read` and `hr-write` roles.
 - Keep tenant- or object-level rules ("may edit *this* document") in your own code. Roles answer "what kind of user is this?".
+
+## Login-as privilege
+
+[Login as](./login-as.md) uses the same role-name matching as `WithRoles` / `GetRole`. Configure which grants may impersonate:
+
+```go
+LoginAs: goauth.LoginAsOptions{
+	Enabled: true,
+	Roles:   []string{"admin", "superadmin"}, // matches "admin:rw", "Admin", …
+	ResolveUser: /* ... */,
+},
+```
+
+Only put production break-glass roles in that list.

@@ -23,6 +23,7 @@ type Claims struct {
 	TokenType string     `json:"token_type,omitempty"`
 	Content   JSONBAny   `json:"content"`
 	Roles     JSONBArray `json:"roles"`
+	LoggedBy  *LoggedBy  `json:"logged_by,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -35,6 +36,7 @@ type RefreshTokenClaims struct {
 	SigningMethodHMAC   string     `json:"signing_method,omitempty"`
 	Content             JSONBAny   `json:"content,omitempty"`
 	Roles               JSONBArray `json:"roles,omitempty"`
+	LoggedBy            *LoggedBy  `json:"logged_by,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -126,11 +128,19 @@ func (a *Authorization) RefreshAccessToken(
 		roles = JSONBArray([]any{})
 	}
 
+	loggedBy := options.loggedBy
+	if loggedBy == nil {
+		loggedBy = refreshTokenClaims.LoggedBy
+	}
+	if loggedBy == nil && sessionData.LoggedBy != nil && *sessionData.LoggedBy != "" {
+		loggedBy = &LoggedBy{ID: *sessionData.LoggedBy}
+	}
 	claims := &Claims{
 		UserID:    refreshTokenClaims.UserID,
 		TokenType: tokenTypeAccess,
 		Content:   options.content,
 		Roles:     roles,
+		LoggedBy:  loggedBy,
 		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
 		IssuedAt:  jwt.NewNumericDate(now),
 	}
@@ -163,6 +173,7 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 		TokenType: tokenTypeAccess,
 		Content:   o.content,
 		Roles:     o.roles,
+		LoggedBy:  o.loggedBy,
 		ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenDuration)),
 		IssuedAt:  jwt.NewNumericDate(now),
 	}
@@ -184,6 +195,7 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 		SigningMethodHMAC:   a.jwtMethod().Alg(),
 		Content:             o.content,
 		Roles:               o.roles,
+		LoggedBy:            o.loggedBy,
 		ExpiresAt:           jwt.NewNumericDate(now.Add(refreshTokenDuration)),
 		IssuedAt:            jwt.NewNumericDate(now),
 	}

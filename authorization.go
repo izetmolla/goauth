@@ -59,6 +59,15 @@ type Config struct {
 	// Verification enables password reset, email confirmation and
 	// one-time-code sign-in. All are off by default.
 	Verification VerificationOptions
+
+	// MFA configures authenticator-app (TOTP) multi-factor authentication.
+	// Off by default; when enabled, users with an enrolled factor must
+	// complete a TOTP challenge before any session is created.
+	MFA MFAOptions
+
+	// LoginAs configures admin impersonation (GET/POST {base}/login_as).
+	// Off by default.
+	LoginAs LoginAsOptions
 }
 type Authorization struct {
 	JWTSecret            string
@@ -89,6 +98,8 @@ type Authorization struct {
 	endpoints EndpointOptions
 	ui        UIOptions
 	verify    *verification
+	totp      *totpMFA
+	loginAs   *loginAsFeature
 	pages     map[string]string // page name -> path, only pages that are on
 
 	// Resolved once in New so hot paths never re-parse configuration.
@@ -140,6 +151,14 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err != nil {
 		return nil, fmt.Errorf("verification: %w", err)
 	}
+	totp, err := newTOTP(cfg.MFA.TOTP, cfg.JWTSecret, cfg.UI.AppName)
+	if err != nil {
+		return nil, fmt.Errorf("mfa: %w", err)
+	}
+	loginAs, err := newLoginAs(cfg.LoginAs)
+	if err != nil {
+		return nil, fmt.Errorf("login_as: %w", err)
+	}
 
 	var cookies CookieOptions
 	if cfg.Cookies != nil {
@@ -173,6 +192,8 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		endpoints:                  cfg.Endpoints,
 		ui:                         cfg.UI,
 		verify:                     verify,
+		totp:                       totp,
+		loginAs:                    loginAs,
 	}
 	if err := a.resolvePages(cfg.UI); err != nil {
 		return nil, err

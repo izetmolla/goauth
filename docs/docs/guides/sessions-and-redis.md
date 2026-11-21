@@ -10,9 +10,12 @@ description: How sessions are stored, looked up and cached in Redis, and the ses
 | Event | What happens |
 |---|---|
 | Sign-in (`Authorize`) | Row inserted with `expires_at = now + RefreshTokenDuration` |
+| Login as | Same as sign-in, plus `logged_by` = admin id and `method` = `login_as` ([guide](./login-as.md)) |
 | Web request / refresh | Row loaded, checked for `is_deleted` and `expires_at`, user roles read |
 | Sign-out | You set `is_deleted = true` (see [Sign-out](./sign-out.md)) |
 | Expiry | Row stays in the table but no longer authenticates; clean up periodically |
+
+`session.LoggedBy` is set when an admin impersonates another user. The effective principal is still `session.UserID`.
 
 ## Reading sessions
 

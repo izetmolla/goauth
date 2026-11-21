@@ -67,6 +67,8 @@ func (a *Authorization) dispatch(w http.ResponseWriter, r *http.Request, oauth o
 		oauth(w, r, p, origin, secure)
 	case *CredentialsProvider:
 		a.credentialsCallback(w, r, p)
+	case *PasskeyProvider:
+		writeError(w, http.StatusBadRequest, "Use /provider/"+providerID+"/(login|register)/(begin|finish) for passkeys")
 	case nil:
 		writeError(w, http.StatusNotFound, "Unknown provider: "+providerID)
 	default:
@@ -263,7 +265,11 @@ func (a *Authorization) completeProviderConnect(w http.ResponseWriter, r *http.R
 }
 
 // completeSignIn creates the session; oauthCallback has already validated user.
+// When TOTP MFA is enabled for the user, it returns MFA_REQUIRED instead.
 func (a *Authorization) completeSignIn(w http.ResponseWriter, r *http.Request, p *OAuthProvider, user *User, account *Account) {
+	if a.maybeChallengeMFA(w, r, "", user.ID, p.ID(), "", account, Map{"id": user.ID, "roles": user.Roles}) {
+		return
+	}
 	tokens, sessionID, err := a.Authorize(append([]AuthorizeOptionsFunc{
 		a.WithUserID(user.ID),
 		a.WithUserRoles(user.Roles),

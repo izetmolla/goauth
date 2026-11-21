@@ -13,13 +13,32 @@ description: The routes served by auth.Handler(), their parameters and responses
 | any | `/api/authorization/provider/{id}` | `auth.HandleSignIn` | Start sign-in |
 | any | `/api/authorization/provider/{id}/callback` | `auth.HandleCallback` | OAuth callback |
 | `POST` | `/api/authorization/provider/{id}/register` | `auth.HandleRegister` | Credentials sign-up (off by default) |
+| `POST` | `/api/authorization/provider/passkey/{register\|login}/{begin\|finish}` | `auth.HandlePasskey` | Passkey ceremonies when a passkey provider is registered ([passkey](../providers/passkey.md)) |
 | `GET` | `/api/authorization/register` (`UI.RegisterEndpoint`) | `auth.RegisterPage` | Sign-up page (off by default) |
 | | `/forgot`, `/password/*`, `/otp*`, `/verify-email*` | | Password reset, one-time codes, email confirmation (off by default, see [verification](./verification.md#4-endpoints)) |
+| `GET`/`POST` | `/api/authorization/mfa/totp/*` | `auth.HandleTOTPStatus`, … | Authenticator MFA (off by default, see [MFA TOTP](./mfa-totp.md)) |
+| `GET`/`POST` | `/api/authorization/login_as?user_id=` | `auth.HandleLoginAs` | Admin login-as (off by default, see [Login as](./login-as.md)) |
 | `GET` | `/api/authorization/csrf` | `auth.GetCSRFToken` | CSRF token for custom forms |
 | `GET` | `/api/authorization/signin` (`UI.SignInEndpoint`) | `auth.SignInPage` | Built-in sign-in page, off by default ([details](./sign-in-page.md)) |
 | `GET` | `/api/authorization/assets/{file}` | | The page's CSS and JS |
 
-Sign-in APIs are on by default. Sign-up, the verification endpoints and every HTML page are off until enabled, and the pages can be served at your own paths (`UI.SignInEndpoint` and friends). See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off).
+Sign-in APIs are on by default. Sign-up, verification, MFA, login-as and every HTML page are off until enabled, and the pages can be served at your own paths (`UI.SignInEndpoint` and friends). See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off).
+
+### MFA routes (when `MFA.TOTP.Enabled`)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/authorization/mfa/totp/status` | Whether the signed-in user has TOTP enabled |
+| `POST` | `/api/authorization/mfa/totp/enroll/begin` | Start enrollment (otpauth URL + secret) |
+| `POST` | `/api/authorization/mfa/totp/enroll/confirm` | Confirm with first code; returns backup codes |
+| `POST` | `/api/authorization/mfa/totp/disable` | Turn off TOTP (code or backup) |
+| `POST` | `/api/authorization/mfa/totp/verify` | Complete sign-in after `MFA_REQUIRED` |
+
+### Login-as (when `LoginAs.Enabled`)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` or `POST` | `/api/authorization/login_as?user_id=` | Impersonate another user (admin session required) |
 
 ## Mounting
 

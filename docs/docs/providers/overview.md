@@ -21,8 +21,12 @@ Providers: []goauth.Provider{
 | Google | `google` | `oidc` | [Google](./google.md) |
 | Azure AD / Entra ID | `azuread-v2` | `oidc` | [Azure AD](./azure-ad.md) |
 | Credentials | `credentials` (configurable) | `credentials` | [Credentials](./credentials.md) |
-| LDAP / Active Directory | n/a (a client, not a provider) | n/a | [LDAP](./ldap.md) |
+| Passkey | `passkey` | WebAuthn | [Passkey](./passkey.md) |
 | Your own | anything | `oauth` / `oidc` | [Custom providers](../custom-providers/overview.md) |
+
+Dozens of Auth.js-style OAuth/OIDC presets also ship under `providers/*` (GitHub, Discord, Keycloak, …). They follow the same `New(Options)` pattern as Google; see the package READMEs and [Custom providers](../custom-providers/overview.md).
+
+Second-factor **TOTP** is not a provider — configure `Config.MFA.TOTP` ([guide](../guides/mfa-totp.md)).
 
 ## The `Provider` interface
 
@@ -34,12 +38,13 @@ type Provider interface {
 }
 ```
 
-The sign-in handlers understand two concrete types:
+The sign-in handlers understand:
 
 - `*goauth.OAuthProvider` for OAuth 2.0 and OpenID Connect
 - `*goauth.CredentialsProvider` for form-based sign-in
+- `*goauth.PasskeyProvider` for WebAuthn (from `providers/passkey`)
 
-Other types show up in `/providers` but their sign-in endpoint returns `400 Unsupported provider type`.
+Other types show up in `/providers` but their generic sign-in endpoint returns `400 Unsupported provider type` (passkeys use dedicated begin/finish routes).
 
 ## Redirect URIs
 

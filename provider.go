@@ -64,12 +64,18 @@ type OAuthProvider struct {
 	AuthorizationParams url.Values
 	TokenURL            string
 	UserInfoURL         string
+	// UserInfoMethod is the HTTP method for UserInfoURL. Empty means GET.
+	UserInfoMethod string
 
 	Scopes []string
 	Checks []Check
 
 	// Profile maps the raw provider profile (and tokens) into a User. Required.
 	Profile func(profile Profile, tokens TokenSet) (*OAuthUser, error)
+
+	// FetchUserInfo optionally replaces the default UserInfoURL request
+	// (e.g. providers that need POST bodies or secondary API calls).
+	FetchUserInfo func(ctx context.Context, tokens TokenSet) (Profile, error)
 
 	// AuthorizationStyle controls how client credentials are sent to the token
 	// endpoint: "body" (default) or "header" (HTTP Basic).
@@ -106,9 +112,9 @@ type CredentialsProvider struct {
 	// for field-level errors; (nil, nil) yields a generic invalid credentials
 	// response.
 	//
-	// To require a one-time code for this sign-in, set user.RequireMFA = true and
-	// user.MFADelivery (or use credentials.RequireMFA). MFAConfig.SendCode must be
-	// configured; MFAConfig.Enabled can stay false for selective MFA only.
+	// Authenticator-app MFA is configured globally via Config.MFA.TOTP (off by
+	// default). When enabled and the user has enrolled, finishSignIn challenges
+	// with MFA_REQUIRED before creating a session — see the MFA TOTP guide.
 	Authorize func(ctx context.Context, credentials map[string]string, r *http.Request) (*OAuthUser, error)
 
 	// Register creates an account from the sign-up form and returns the new

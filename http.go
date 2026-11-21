@@ -27,6 +27,18 @@ import (
 //	POST {base}/verify-email/send              -> HandleVerifyEmailSend
 //	POST {base}/verify-email                   -> HandleVerifyEmail
 //
+// Off by default (Config.MFA.TOTP.Enabled):
+//
+//	GET  {base}/mfa/totp/status                -> HandleTOTPStatus
+//	POST {base}/mfa/totp/enroll/begin          -> HandleTOTPEnrollBegin
+//	POST {base}/mfa/totp/enroll/confirm        -> HandleTOTPEnrollConfirm
+//	POST {base}/mfa/totp/disable               -> HandleTOTPDisable
+//	POST {base}/mfa/totp/verify                -> HandleTOTPVerify
+//
+// Off by default (Config.LoginAs.Enabled):
+//
+//	GET|POST {base}/login_as?user_id=…         -> HandleLoginAs
+//
 // HTML pages, all off by default (Config.UI): sign-in, register, forgot
 // password, one-time code and verify email, each at its configured path
 // (UIOptions.SignInEndpoint, ...), plus GET {base}/assets/{file} for their
@@ -52,6 +64,11 @@ func (a *Authorization) Handler() http.Handler {
 	}
 	route(base+"/provider/{provider}", a.HandleSignIn)
 	route(base+"/provider/{provider}/callback", a.HandleCallback)
+	// Passkey / WebAuthn ceremonies (begin + finish for register and login).
+	route("POST "+base+"/provider/{provider}/register/begin", a.HandlePasskey)
+	route("POST "+base+"/provider/{provider}/register/finish", a.HandlePasskey)
+	route("POST "+base+"/provider/{provider}/login/begin", a.HandlePasskey)
+	route("POST "+base+"/provider/{provider}/login/finish", a.HandlePasskey)
 	if !e.DisableCSRF {
 		route("GET "+base+"/csrf", a.GetCSRFToken)
 	}
@@ -72,6 +89,17 @@ func (a *Authorization) Handler() http.Handler {
 			route("POST "+base+"/verify-email/send", a.HandleVerifyEmailSend)
 			route("POST "+base+"/verify-email", a.HandleVerifyEmail)
 		}
+	}
+	if a.totpEnabled() {
+		route("GET "+base+"/mfa/totp/status", a.HandleTOTPStatus)
+		route("POST "+base+"/mfa/totp/enroll/begin", a.HandleTOTPEnrollBegin)
+		route("POST "+base+"/mfa/totp/enroll/confirm", a.HandleTOTPEnrollConfirm)
+		route("POST "+base+"/mfa/totp/disable", a.HandleTOTPDisable)
+		route("POST "+base+"/mfa/totp/verify", a.HandleTOTPVerify)
+	}
+	if a.loginAsEnabled() {
+		route("GET "+base+"/login_as", a.HandleLoginAs)
+		route("POST "+base+"/login_as", a.HandleLoginAs)
 	}
 
 	page(pageSignIn, a.SignInPage)

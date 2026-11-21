@@ -60,11 +60,12 @@ Framework adapters are only needed when you use that framework:
 
 | Import path | What it contains |
 |---|---|
-| `github.com/izetmolla/goauth` | Core: `New`, `Config`, handlers, middlewares, tokens, sessions, roles, cookies, password hashing |
+| `github.com/izetmolla/goauth` | Core: `New`, `Config`, handlers, middlewares, tokens, sessions, roles, cookies, password hashing, MFA TOTP, login-as |
 | `github.com/izetmolla/goauth/providers/google` | Google OpenID Connect provider |
 | `github.com/izetmolla/goauth/providers/azuread` | Microsoft Azure AD / Entra ID provider |
 | `github.com/izetmolla/goauth/providers/credentials` | Credentials (username/password) provider definition |
-| `github.com/izetmolla/goauth/providers/ldap` | LDAP / Active Directory client for password verification |
+| `github.com/izetmolla/goauth/providers/passkey` | WebAuthn / passkey provider (opt-in; adds `go-webauthn`) |
+| `github.com/izetmolla/goauth/providers/…` | Other Auth.js-style OAuth/OIDC presets (GitHub, Discord, Keycloak, …) |
 
 ## Versioning
 

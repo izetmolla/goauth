@@ -30,6 +30,8 @@ const sidebars: SidebarsConfig = {
         'guides/roles-and-permissions',
         'guides/tokens-and-refresh',
         'guides/credentials-login',
+        'guides/mfa-totp',
+        'guides/login-as',
         'guides/sign-out',
         'guides/sessions-and-redis',
         'guides/cookies',
@@ -45,7 +47,7 @@ const sidebars: SidebarsConfig = {
         'providers/google',
         'providers/azure-ad',
         'providers/credentials',
-        'providers/ldap',
+        'providers/passkey',
       ],
     },
     {

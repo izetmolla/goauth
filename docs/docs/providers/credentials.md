@@ -59,6 +59,6 @@ mux.HandleFunc("GET /api/login/fields", func(w http.ResponseWriter, r *http.Requ
 })
 ```
 
-## Combining with LDAP
+## Second factor and passkeys
 
-For directory accounts, verify the password with the [LDAP client](./ldap.md) inside your sign-in handler.
+After a successful password check, users with [Authenticator MFA](../guides/mfa-totp.md) enrolled receive `MFA_REQUIRED` until they verify a TOTP code. Passkeys are a separate primary sign-in method — see [Passkey](./passkey.md).

@@ -19,6 +19,7 @@ type AuthorizeOptions struct {
 	content   JSONBAny
 	roles     JSONBArray
 	method    string
+	loggedBy  *LoggedBy
 }
 
 // AuthorizeOptionsFunc is the functional-option type used with Authorize,

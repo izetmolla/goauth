@@ -51,12 +51,17 @@ auth, err := goauth.New(&goauth.Config{
 	Providers:         []goauth.Provider{ /* ... */ },
 	ResolveUser:       resolveUser,       // required for OAuth providers
 	OnProviderConnect: onProviderConnect, // optional, see "Provider connect"
+
+	// --- Optional features (all off by default) --------------------------
+	Verification: goauth.VerificationOptions{ /* password reset, email confirm, OTP */ },
+	MFA:          goauth.MFAOptions{TOTP: goauth.TOTPOptions{Enabled: false}},
+	LoginAs:      goauth.LoginAsOptions{Enabled: false},
 })
 ```
 
 | Field | Default | Notes |
 |---|---|---|
-| `JWTSecret` | **required** | Use at least 32 random bytes. Rotating it invalidates every token and signed cookie. |
+| `JWTSecret` | **required** | Use at least 32 random bytes. Rotating it invalidates every token and signed cookie. Also derives keys for verification hashes and TOTP secret encryption. |
 | `SigningMethod` | `HS256` | `HS256`, `HS384` or `HS512` (case-insensitive). Any other value makes `New` return an error. Tokens are only accepted when signed with this exact algorithm and carrying an `exp` claim. |
 | `AuthURL` | from request | See [AuthURL](#authurl). |
 | `SignInRedirectURL` | `/sign-in` | Can be absolute, for example `https://auth.example.com/sign-in`. |
@@ -76,6 +81,8 @@ auth, err := goauth.New(&goauth.Config{
 | `Endpoints` | sign-in on, sign-up off | Switch built-in API endpoints on/off. See [Built-in pages](./sign-in-page.md#switching-parts-on-and-off). |
 | `UI` | all pages off | Turn pages on (`EnableAllUI` or one by one), set their paths (`SignInEndpoint`, …) and branding for the pages and emails. |
 | `Verification` | all off | Password reset, email confirmation, one-time codes. See [verification](./verification.md). |
+| `MFA` | TOTP off | Authenticator-app MFA. See [Authenticator MFA](./mfa-totp.md). |
+| `LoginAs` | off | Admin impersonation (`/login_as`). See [Login as](./login-as.md). |
 | `KeepRefreshTokenServerSide` | `false` | Keep the refresh token out of the OAuth callback page; web clients refresh with the session cookie. See [Tokens and refresh](./tokens-and-refresh.md#keeping-the-refresh-token-out-of-the-browser). |
 
 ## Duration format

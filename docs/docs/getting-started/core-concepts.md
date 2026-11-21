@@ -30,9 +30,16 @@ A provider is a way to sign in. goauth ships with:
 | Google | OIDC | `providers/google` |
 | Azure AD / Entra ID | OIDC | `providers/azuread` |
 | Credentials | credentials | `providers/credentials` |
+| Passkey | WebAuthn | `providers/passkey` |
 | Anything OAuth 2.0 / OIDC | oauth / oidc | `goauth.OAuthProvider` literal |
 
-LDAP is a separate client (`providers/ldap`) that you call from your own login handler.
+Optional features (all off by default):
+
+| Feature | Config | Guide |
+|---|---|---|
+| Authenticator MFA (TOTP) | `Config.MFA.TOTP` | [Authenticator MFA](../guides/mfa-totp.md) |
+| Admin login-as | `Config.LoginAs` | [Login as](../guides/login-as.md) |
+| Email verification / OTP | `Config.Verification` | [Verification](../guides/verification.md) |
 
 Each provider has an **id** used in URLs: `/api/authorization/provider/{id}`.
 

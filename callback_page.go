@@ -189,6 +189,23 @@ function finishConnect(message, resourceId) {
 
 if (globalOptions?.code === 'ERROR') {
 	showError(globalOptions?.message);
+} else if (globalOptions?.code === 'MFA_REQUIRED' && globalOptions?.mfa?.token) {
+	try {
+		sessionStorage.setItem('goauth.mfa', JSON.stringify({
+			token: globalOptions.mfa.token,
+			methods: globalOptions.mfa.methods || ['totp'],
+			user: globalOptions.user || null
+		}));
+	} catch (_) {}
+	if (window.opener && !window.opener.closed) {
+		try {
+			window.opener.postMessage({ type: 'authorization-mfa-required', mfa: globalOptions.mfa, user: globalOptions.user }, window.location.origin);
+		} catch (_) {}
+		window.close();
+	} else {
+		showError(globalOptions?.message || 'Authenticator code required. Return to the app to enter your code.');
+		if (backToSignInEl) backToSignInEl.hidden = false;
+	}
 } else if (globalOptions?.type === "sign_in") {
 	if (globalOptions?.user && globalOptions?.tokens) {
 		const snapshot = persistSignIn({

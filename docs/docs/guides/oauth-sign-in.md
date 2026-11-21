@@ -212,6 +212,8 @@ location.href = '/api/authorization/provider/google';
 
 On failure, the page shows the error message and a **Back to sign in** button that goes to `/sign-in`.
 
+If [Authenticator MFA](./mfa-totp.md) is enabled for the user, the callback may return `code: "MFA_REQUIRED"` instead of tokens. The page stores the challenge in `sessionStorage` (`goauth.mfa`) and, in a popup, posts `{type: "authorization-mfa-required", mfa, user}` to the opener. Complete sign-in with `POST /api/authorization/mfa/totp/verify`.
+
 The session cookie is set as well, so server-rendered pages protected by `UseWEBAuthorization` work right away.
 
 ## Security checks

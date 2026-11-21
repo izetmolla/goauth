@@ -36,11 +36,12 @@ Every sign-in creates one row. Its columns match the `goauth.Session` struct:
 | Column | Type | Meaning |
 |---|---|---|
 | `id` | UUID, primary key | Session id, stored in the session cookie and in the refresh token |
-| `user_id` | UUID | Owner of the session |
+| `user_id` | UUID | Owner of the session (effective user) |
 | `type` | varchar | `sign_in` (default) or `oauth` |
 | `ip_address` | varchar(50) | Client IP at sign-in |
 | `user_agent` | varchar(255) | Client user agent at sign-in |
-| `method` | varchar(50) | Provider id used to sign in (`google`, `credentials`, ...) |
+| `method` | varchar(50) | How the session was created (`google`, `credentials`, `passkey`, `login_as`, …) |
+| `logged_by` | varchar(64), nullable | Admin user id when the session was created via [login as](../guides/login-as.md) |
 | `account` | JSON | Provider account and tokens (`goauth.Account`) for OAuth sign-ins |
 | `expires_at` | timestamp | When the refresh token expires |
 | `is_deleted` | boolean | `true` once the session is signed out |
@@ -48,7 +49,13 @@ Every sign-in creates one row. Its columns match the `goauth.Session` struct:
 
 A session authenticates only while `is_deleted = false` and `expires_at` is in the future.
 
-If you enable password reset, email confirmation or one-time codes, also create the verification table with `auth.MigrateVerificationTokens(ctx)` (portable across databases) or the SQL in the [verification guide](../guides/verification.md#1-create-the-verification-table).
+### Optional goauth-owned tables
+
+| Feature | How to create | Guide |
+|---|---|---|
+| Password reset / email confirm / email OTP | `auth.MigrateVerificationTokens(ctx)` | [Verification](../guides/verification.md#1-create-the-verification-table) |
+| Authenticator MFA (TOTP) | `auth.MigrateTOTP(ctx)` | [MFA TOTP](../guides/mfa-totp.md) |
+| Passkey credentials / challenges | your `passkey.Store` schema | [Passkey](../providers/passkey.md) |
 
 Session lookups join `sessions.user_id` to `users.id` in a single query, so both columns must have the same type (both `uuid`, both `TEXT`, or both `CHAR(36)`, as in the schemas below).
 
@@ -92,6 +99,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     ip_address varchar(50),
     user_agent varchar(255),
     method     varchar(50) DEFAULT 'credentials',
+    logged_by  varchar(64),
     account    jsonb,
     expires_at timestamptz,
     is_deleted boolean DEFAULT false,
@@ -127,6 +135,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     ip_address TEXT,
     user_agent TEXT,
     method     TEXT DEFAULT 'credentials',
+    logged_by  TEXT,
     account    TEXT,
     expires_at DATETIME,
     is_deleted NUMERIC DEFAULT 0,
@@ -153,6 +162,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     ip_address VARCHAR(50),
     user_agent VARCHAR(255),
     method     VARCHAR(50) DEFAULT 'credentials',
+    logged_by  VARCHAR(64) NULL,
     account    JSON,
     expires_at DATETIME(3),
     is_deleted BOOLEAN DEFAULT FALSE,

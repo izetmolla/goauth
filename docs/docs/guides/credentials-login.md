@@ -184,4 +184,4 @@ localStorage.setItem(key, JSON.stringify(s));
 - Return the same message for "unknown email" and "wrong password" (done above).
 - Require HTTPS so the password and the `Secure` cookie are protected.
 - Re-hash on sign-in when you raise the iteration count: compare the iterations in the stored hash and call `HashPassword` again if they are lower.
-- For directory accounts, verify passwords against LDAP instead. See [LDAP](../providers/ldap.md).
+- Optionally require [Authenticator MFA (TOTP)](./mfa-totp.md) after a successful password check.

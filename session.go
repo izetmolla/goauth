@@ -37,6 +37,9 @@ type Session struct {
 	UserAgent string `json:"user_agent" gorm:"size:255;"`
 	Method    string `json:"method" gorm:"size:50;default:'credentials';"`
 
+	// LoggedBy is the admin user id when this session was created via login_as.
+	LoggedBy *string `json:"logged_by,omitempty" gorm:"column:logged_by;size:64"`
+
 	Account JSONBAny `json:"account" gorm:"type:jsonb;default:null"`
 
 	ExpiresAt time.Time `json:"expires_at"`
@@ -245,6 +248,10 @@ func (a *Authorization) CreateSession(o *AuthorizeOptions) (string, error) {
 		UserAgent: o.userAgent,
 		Method:    o.method,
 		ExpiresAt: time.Now().Add(refreshTokenDuration),
+	}
+	if o.loggedBy != nil && o.loggedBy.ID != "" {
+		id := o.loggedBy.ID
+		session.LoggedBy = &id
 	}
 	if o.account != nil {
 		session.Account = accountToJSONB(o.account)

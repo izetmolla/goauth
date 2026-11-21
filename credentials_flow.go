@@ -246,8 +246,12 @@ func (a *Authorization) handleCredentials(w http.ResponseWriter, r *http.Request
 
 // finishSignIn creates the session and answers like the OAuth callback:
 // JSON for fetch/token clients, otherwise the callback page, which stores
-// the session in the browser and redirects.
+// the session in the browser and redirects. When TOTP MFA is enabled for the
+// user, it returns MFA_REQUIRED instead of creating a session.
 func (a *Authorization) finishSignIn(w http.ResponseWriter, r *http.Request, page, userID string, user Map, method, redirect string) {
+	if a.maybeChallengeMFA(w, r, page, userID, method, redirect, nil, user) {
+		return
+	}
 	tokens, sessionID, err := a.Authorize(append(
 		[]AuthorizeOptionsFunc{a.WithUserID(userID)},
 		a.SessionMetaFromRequest(r, method)...,

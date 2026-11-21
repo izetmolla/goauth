@@ -1,0 +1,8 @@
+examples/echo/echo
+examples/echo/echo.db
+
+examples/fiber/fiber
+examples/fiber/fiber.db
+
+examples/gin/gin
+examples/gin/gin.db

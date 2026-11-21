@@ -11,7 +11,9 @@ description: goauth is a framework-agnostic authentication and authorization mod
 
 It gives you:
 
-- **Sign-in** with OAuth 2.0 / OpenID Connect (Google, Azure AD / Entra ID, or any custom provider), plus building blocks for password and LDAP / Active Directory sign-in.
+- **Sign-in** with OAuth 2.0 / OpenID Connect (Google, Azure AD / Entra ID, or any custom provider), credentials (password), and opt-in [passkeys](./providers/passkey.md).
+- **Authenticator MFA (TOTP)** for Google / Microsoft Authenticator–style second factors — off by default ([guide](./guides/mfa-totp.md)).
+- **Login as** for admin impersonation with a `logged_by` audit trail — off by default ([guide](./guides/login-as.md)).
 - **Tokens**: a short-lived JWT access token and a long-lived refresh token for every session.
 - **Sessions** stored in your SQL database through [GORM](https://gorm.io), with an optional [Redis](https://redis.io) cache.
 - **Two protection modes**: Bearer JWT for APIs, and a session cookie (with redirect to your sign-in page) for server-rendered pages.
@@ -36,8 +38,8 @@ go get github.com/izetmolla/goauth
 The docs go from simple to advanced:
 
 1. **[Getting started](./getting-started/installation.md)**: install, run a working app in five minutes, create the database tables and learn the core ideas.
-2. **[Guides](./guides/configuration.md)**: one topic per page: configuration, endpoints, OAuth, protecting routes, roles, tokens, password sign-in, sign-out, Redis, cookies, account linking and single sign-on.
-3. **[Providers](./providers/overview.md)**: Google, Azure AD, credentials, LDAP and writing your own OAuth provider.
+2. **[Guides](./guides/configuration.md)**: one topic per page: configuration, endpoints, OAuth, MFA, login-as, protecting routes, roles, tokens, password sign-in, sign-out, Redis, cookies, account linking and single sign-on.
+3. **[Providers](./providers/overview.md)**: Google, Azure AD, credentials, passkeys and writing your own OAuth provider.
 4. **[Custom providers](./custom-providers/overview.md)**: add any OAuth 2.0 / OpenID Connect provider, step by step, with a reusable package and tests.
 5. **[Frameworks](./frameworks/net-http.mdx)**: complete apps for net/http, Fiber, Echo, Gin and Chi.
 6. **[pkg.go.dev](https://pkg.go.dev/github.com/izetmolla/goauth)**: the full Go API reference.

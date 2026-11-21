@@ -164,7 +164,7 @@ const features: Feature[] = [
     body: (
       <>
         PKCE, <code>state</code> and <code>nonce</code>, <code>__Host-</code> cookies, signed CSRF tokens, PBKDF2
-        password hashing and revocable sessions.
+        password hashing, optional TOTP MFA, passkeys and revocable sessions.
       </>
     ),
   },
@@ -224,11 +224,12 @@ function Features() {
 const providers = [
   {name: 'Google', to: '/docs/providers/google', kind: 'OIDC'},
   {name: 'Azure AD / Entra ID', to: '/docs/providers/azure-ad', kind: 'OIDC'},
-  {name: 'LDAP / Active Directory', to: '/docs/providers/ldap', kind: 'Directory'},
   {name: 'Email & password', to: '/docs/guides/credentials-login', kind: 'Credentials'},
+  {name: 'Passkey', to: '/docs/providers/passkey', kind: 'WebAuthn'},
+  {name: 'Authenticator MFA', to: '/docs/guides/mfa-totp', kind: 'TOTP'},
+  {name: 'Login as', to: '/docs/guides/login-as', kind: 'Admin'},
   {name: 'GitHub', to: '/docs/custom-providers/examples', kind: 'OAuth 2.0'},
   {name: 'Keycloak', to: '/docs/custom-providers/examples', kind: 'OIDC'},
-  {name: 'Okta / Auth0', to: '/docs/custom-providers/examples', kind: 'OIDC'},
   {name: 'Your own provider', to: '/docs/custom-providers/step-by-step', kind: 'Any'},
 ];
 
@@ -238,7 +239,7 @@ function Providers() {
       <div className="container">
         <div className={styles.sectionHead}>
           <Heading as="h2">Sign in with anything</Heading>
-          <p>Built-in providers, directory sign-in, passwords, and any OAuth 2.0 or OpenID Connect server.</p>
+          <p>Built-in providers, passwords, passkeys, MFA, and any OAuth 2.0 or OpenID Connect server.</p>
         </div>
         <div className={styles.providerGrid}>
           {providers.map((p) => (
