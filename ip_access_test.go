@@ -95,7 +95,7 @@ func TestIPAccessEnforcement(t *testing.T) {
 	}
 
 	h := a.Handler()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/csrf", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/csrf", nil)
 	req.RemoteAddr = "198.51.100.7:9"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -105,7 +105,7 @@ func TestIPAccessEnforcement(t *testing.T) {
 }
 
 func TestIPAccessDisabled(t *testing.T) {
-	p, err := newIPAccess(IPAccessOptions{})
+	p, err := newIPAccess(IPAccessOptions{}, DefaultTablePrefix)
 	if err != nil || p.enabled {
 		t.Fatalf("enabled=%v err=%v", p.enabled, err)
 	}

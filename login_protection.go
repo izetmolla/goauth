@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,10 +11,11 @@ import (
 	"uuid"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
-	defaultLoginAttemptTable = "login_attempts"
+	loginAttemptTableSuffix = "login_attempts" // follows Config.TablePrefix
 
 	codeLoginLocked = "LOGIN_LOCKED"
 	msgLoginLocked  = "Too many incorrect sign-in attempts. Try again later."
@@ -30,7 +32,8 @@ type LoginProtectionOptions struct {
 	// LockoutFor is how long the identifier stays locked after MaxFailures.
 	// Required when Enabled; must be between 1 minute and 24 hours.
 	LockoutFor time.Duration
-	// TableName of the login_attempts table. Default "login_attempts".
+	// TableName of the login attempts table, used as is. Default
+	// Config.TablePrefix + "login_attempts" ("goauth_login_attempts").
 	TableName string
 }
 
@@ -57,7 +60,7 @@ type loginProtection struct {
 	table      string
 }
 
-func newLoginProtection(o LoginProtectionOptions) (*loginProtection, error) {
+func newLoginProtection(o LoginProtectionOptions, tablePrefix string) (*loginProtection, error) {
 	if !o.Enabled {
 		return &loginProtection{}, nil
 	}
@@ -67,15 +70,11 @@ func newLoginProtection(o LoginProtectionOptions) (*loginProtection, error) {
 	if o.LockoutFor < time.Minute || o.LockoutFor > 24*time.Hour {
 		return nil, errors.New("LoginProtection.LockoutFor must be between 1 minute and 24 hours when Enabled")
 	}
-	table := o.TableName
-	if table == "" {
-		table = defaultLoginAttemptTable
-	}
 	return &loginProtection{
 		enabled:    true,
 		maxFails:   o.MaxFailures,
 		lockoutFor: o.LockoutFor,
-		table:      table,
+		table:      cmp.Or(o.TableName, tablePrefix+loginAttemptTableSuffix),
 	}, nil
 }
 
@@ -96,13 +95,14 @@ func (a *Authorization) loginAttemptTable(ctx context.Context) *gorm.DB {
 
 // credentialsIdentifier picks the lockout key from the posted form: email
 // when present, otherwise phone/username/login, otherwise the client IP.
+// It is capped to the column size.
 func credentialsIdentifier(values map[string]string, ip string) string {
 	if e := normalizeEmail(values[inputEmail]); e != "" {
-		return e
+		return truncateUTF8(e, 255)
 	}
 	for _, key := range []string{"phone", "username", "login", "number"} {
 		if v := strings.TrimSpace(values[key]); v != "" {
-			return strings.ToLower(v)
+			return truncateUTF8(strings.ToLower(v), 255)
 		}
 	}
 	if ip != "" {
@@ -111,25 +111,26 @@ func credentialsIdentifier(values map[string]string, ip string) string {
 	return ""
 }
 
+// truncateUTF8 shortens s to at most n bytes without splitting a character
+// and drops invalid UTF-8, so the value is always storable: PostgreSQL
+// rejects invalid UTF-8, and a failed write would silently skip the count.
+func truncateUTF8(s string, n int) string {
+	if len(s) > n {
+		s = s[:n]
+	}
+	return strings.ToValidUTF8(s, "")
+}
+
 // clientMAC returns an optional device/MAC hint. Browsers cannot read the
 // real NIC MAC; clients may send X-Device-MAC / X-Client-MAC / form "mac"
 // when they have a stable device identifier to store alongside attempts.
 func clientMAC(r *http.Request, values map[string]string) string {
 	for _, h := range []string{"X-Device-MAC", "X-Client-MAC", "X-Device-Id"} {
 		if v := strings.TrimSpace(r.Header.Get(h)); v != "" {
-			if len(v) > 64 {
-				return v[:64]
-			}
-			return v
+			return truncateUTF8(v, 64)
 		}
 	}
-	if v := strings.TrimSpace(values["mac"]); v != "" {
-		if len(v) > 64 {
-			return v[:64]
-		}
-		return v
-	}
-	return ""
+	return truncateUTF8(strings.TrimSpace(values["mac"]), 64)
 }
 
 // checkLoginLockout refuses credentials sign-in while the identifier is
@@ -138,7 +139,7 @@ func (a *Authorization) checkLoginLockout(w http.ResponseWriter, r *http.Request
 	if a.loginProt == nil || !a.loginProt.enabled {
 		return false
 	}
-	id := credentialsIdentifier(values, clientIP(r))
+	id := credentialsIdentifier(values, a.trustedClientIP(r))
 	if id == "" {
 		return false
 	}
@@ -166,64 +167,53 @@ func (a *Authorization) findLoginAttempt(ctx context.Context, identifier string)
 	return &row, nil
 }
 
-// recordLoginFailure increments the failed-attempt streak for the identifier
-// and locks it once MaxFailures is reached.
+// recordLoginFailure counts one failed sign-in for the identifier and locks
+// it once MaxFailures is reached. Every step is a single atomic statement, so
+// concurrent wrong passwords are all counted: a read-modify-write would let
+// parallel guesses overwrite each other and never reach the limit.
 func (a *Authorization) recordLoginFailure(ctx context.Context, r *http.Request, values map[string]string) {
 	if a.loginProt == nil || !a.loginProt.enabled {
 		return
 	}
-	ip := clientIP(r)
+	ip := a.trustedClientIP(r)
 	id := credentialsIdentifier(values, ip)
 	if id == "" {
 		return
 	}
 	now := time.Now().UTC()
-	mac := clientMAC(r, values)
-	ua := r.UserAgent()
-	if len(ua) > 255 {
-		ua = ua[:255]
-	}
+	byID := func() *gorm.DB { return a.loginAttemptTable(ctx).Where("identifier = ?", id) }
 
-	row, err := a.findLoginAttempt(ctx, id)
-	if err != nil {
-		return
-	}
-	if row == nil {
-		row = &LoginAttempt{
+	// Create the streak row; a concurrent insert for the same identifier wins.
+	if err := a.loginAttemptTable(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "identifier"}}, DoNothing: true}).
+		Create(&LoginAttempt{
 			ID:            uuid.NewV4().String(),
 			Identifier:    id,
-			Attempts:      1,
-			IPAddress:     ip,
-			MACAddress:    mac,
-			UserAgent:     ua,
 			LastAttemptAt: now,
 			CreatedAt:     now,
 			UpdatedAt:     now,
-		}
-		if row.Attempts >= a.loginProt.maxFails {
-			until := now.Add(a.loginProt.lockoutFor)
-			row.LockedUntil = &until
-		}
-		_ = a.loginAttemptTable(ctx).Create(row).Error
+		}).Error; err != nil {
 		return
 	}
-
-	// Lockout window elapsed: start a fresh streak.
-	if row.LockedUntil != nil && !now.Before(row.LockedUntil.UTC()) {
-		row.Attempts = 0
-		row.LockedUntil = nil
+	// A lockout that has run out starts a fresh streak.
+	if err := byID().
+		Where("locked_until IS NOT NULL AND locked_until <= ?", now).
+		Updates(map[string]any{"attempts": 0, "locked_until": nil}).Error; err != nil {
+		return
 	}
-	row.Attempts++
-	row.IPAddress = ip
-	row.MACAddress = mac
-	row.UserAgent = ua
-	row.LastAttemptAt = now
-	row.UpdatedAt = now
-	if row.Attempts >= a.loginProt.maxFails {
-		until := now.Add(a.loginProt.lockoutFor)
-		row.LockedUntil = &until
+	if err := byID().Updates(map[string]any{
+		"attempts":        gorm.Expr("attempts + 1"),
+		"ip_address":      truncateUTF8(ip, 50),
+		"mac_address":     clientMAC(r, values),
+		"user_agent":      truncateUTF8(r.UserAgent(), 255),
+		"last_attempt_at": now,
+		"updated_at":      now,
+	}).Error; err != nil {
+		return
 	}
-	_ = a.loginAttemptTable(ctx).Save(row).Error
+	_ = byID().
+		Where("attempts >= ? AND locked_until IS NULL", a.loginProt.maxFails).
+		Update("locked_until", now.Add(a.loginProt.lockoutFor)).Error
 }
 
 // clearLoginFailures resets the streak after a successful sign-in.
@@ -231,9 +221,14 @@ func (a *Authorization) clearLoginFailures(ctx context.Context, values map[strin
 	if a.loginProt == nil || !a.loginProt.enabled {
 		return
 	}
-	id := credentialsIdentifier(values, clientIP(r))
-	if id == "" {
+	a.clearLoginFailuresFor(ctx, credentialsIdentifier(values, a.trustedClientIP(r)))
+}
+
+// clearLoginFailuresFor resets the streak of one identifier, for example
+// after a successful password reset proved control of the email.
+func (a *Authorization) clearLoginFailuresFor(ctx context.Context, identifier string) {
+	if a.loginProt == nil || !a.loginProt.enabled || identifier == "" {
 		return
 	}
-	_ = a.loginAttemptTable(ctx).Where("identifier = ?", id).Delete(&LoginAttempt{}).Error
+	_ = a.loginAttemptTable(ctx).Where("identifier = ?", identifier).Delete(&LoginAttempt{}).Error
 }

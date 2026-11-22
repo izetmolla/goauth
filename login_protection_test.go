@@ -49,12 +49,12 @@ func testLoginProtectionAuth(t *testing.T, maxFails int, lockout time.Duration) 
 }
 
 func TestLoginProtectionRequiresOptions(t *testing.T) {
-	if _, err := newLoginProtection(LoginProtectionOptions{Enabled: true}); err == nil {
+	if _, err := newLoginProtection(LoginProtectionOptions{Enabled: true}, DefaultTablePrefix); err == nil {
 		t.Fatal("expected error when MaxFailures/LockoutFor missing")
 	}
 	if _, err := newLoginProtection(LoginProtectionOptions{
 		Enabled: true, MaxFailures: 5, LockoutFor: time.Second,
-	}); err == nil {
+	}, DefaultTablePrefix); err == nil {
 		t.Fatal("expected error for short lockout")
 	}
 }
@@ -62,13 +62,13 @@ func TestLoginProtectionRequiresOptions(t *testing.T) {
 func TestLoginProtectionLocksAfterMaxFailures(t *testing.T) {
 	a := testLoginProtectionAuth(t, 3, 15*time.Minute)
 	ctx := context.Background()
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
 	req.RemoteAddr = "203.0.113.10:1234"
 	req.Header.Set("User-Agent", "goauth-test")
 	req.Header.Set("X-Device-MAC", "aa:bb:cc:dd:ee:ff")
 	values := map[string]string{"email": "a@x.io", "password": "bad"}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		a.recordLoginFailure(ctx, req, values)
 	}
 	row, err := a.findLoginAttempt(ctx, "a@x.io")
@@ -98,7 +98,7 @@ func TestLoginProtectionLocksAfterMaxFailures(t *testing.T) {
 }
 
 func TestLoginProtectionDisabledByDefault(t *testing.T) {
-	p, err := newLoginProtection(LoginProtectionOptions{})
+	p, err := newLoginProtection(LoginProtectionOptions{}, DefaultTablePrefix)
 	if err != nil || p.enabled {
 		t.Fatalf("enabled=%v err=%v", p.enabled, err)
 	}

@@ -1,12 +1,15 @@
 package goauth
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -14,7 +17,8 @@ import (
 )
 
 const (
-	defaultIPAccessTable = "ip_access_rules"
+	ipAccessTableSuffix  = "ip_access_rules" // follows Config.TablePrefix
+	defaultIPAccessCache = 30 * time.Second
 
 	ipListWhitelist = "whitelist"
 	ipListBlacklist = "blacklist"
@@ -29,8 +33,14 @@ const (
 // restricts access to matching addresses only.
 type IPAccessOptions struct {
 	Enabled bool
-	// TableName defaults to "ip_access_rules".
+	// TableName of the rules table, used as is. Default Config.TablePrefix +
+	// "ip_access_rules" ("goauth_ip_access_rules").
 	TableName string
+	// CacheTTL is how long the enabled rules are kept in memory between
+	// database reads. Changes made through this Authorization apply at once;
+	// changes made elsewhere (another instance, SQL) apply within CacheTTL.
+	// Default 30s; negative disables the cache.
+	CacheTTL time.Duration
 	// SeedWhitelist / SeedBlacklist are optional CIDRs or IPs inserted on
 	// MigrateIPAccess when missing (idempotent by list+CIDR).
 	SeedWhitelist []string
@@ -49,8 +59,6 @@ type IPEntry struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
 }
 
-func (IPEntry) TableName() string { return defaultIPAccessTable }
-
 // IPEntryUpdate is the mutable fields for UpdateWhitelistIP / UpdateBlacklistIP.
 type IPEntryUpdate struct {
 	CIDR    *string
@@ -63,15 +71,26 @@ type ipAccess struct {
 	table         string
 	seedWhitelist []string
 	seedBlacklist []string
+	cacheTTL      time.Duration
+
+	mu       sync.Mutex
+	rules    ipRuleSet
+	loadedAt time.Time // zero when the cache must be reloaded
 }
 
-func newIPAccess(o IPAccessOptions) (*ipAccess, error) {
+// ipRuleSet is the enabled rules, parsed once per load.
+type ipRuleSet struct {
+	whitelist, blacklist []*net.IPNet
+}
+
+func newIPAccess(o IPAccessOptions, tablePrefix string) (*ipAccess, error) {
 	if !o.Enabled {
 		return &ipAccess{}, nil
 	}
-	table := o.TableName
-	if table == "" {
-		table = defaultIPAccessTable
+	table := cmp.Or(o.TableName, tablePrefix+ipAccessTableSuffix)
+	ttl := o.CacheTTL
+	if ttl == 0 {
+		ttl = defaultIPAccessCache
 	}
 	for _, list := range [][]string{o.SeedWhitelist, o.SeedBlacklist} {
 		for _, raw := range list {
@@ -83,8 +102,9 @@ func newIPAccess(o IPAccessOptions) (*ipAccess, error) {
 	return &ipAccess{
 		enabled:       true,
 		table:         table,
-		seedWhitelist: append([]string(nil), o.SeedWhitelist...),
-		seedBlacklist: append([]string(nil), o.SeedBlacklist...),
+		seedWhitelist: slices.Clone(o.SeedWhitelist),
+		seedBlacklist: slices.Clone(o.SeedBlacklist),
+		cacheTTL:      ttl,
 	}, nil
 }
 
@@ -228,6 +248,7 @@ func (a *Authorization) addIPEntry(ctx context.Context, list, cidr, label string
 	if err := a.ipRules(ctx).Create(row).Error; err != nil {
 		return nil, err
 	}
+	a.ipAccess.invalidate()
 	return row, nil
 }
 
@@ -260,6 +281,7 @@ func (a *Authorization) updateIPEntry(ctx context.Context, list, id string, patc
 	if err := a.ipRules(ctx).Save(&row).Error; err != nil {
 		return nil, err
 	}
+	a.ipAccess.invalidate()
 	return &row, nil
 }
 
@@ -275,6 +297,7 @@ func (a *Authorization) removeIPEntry(ctx context.Context, list, id string) erro
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("ip entry %q not found", id)
 	}
+	a.ipAccess.invalidate()
 	return nil
 }
 
@@ -293,47 +316,59 @@ func (a *Authorization) allowClientIP(ctx context.Context, ip string) (bool, err
 	if a.ipAccess == nil || !a.ipAccess.enabled {
 		return true, nil
 	}
-	ip = strings.TrimSpace(ip)
-	parsed := net.ParseIP(ip)
+	parsed := net.ParseIP(strings.TrimSpace(ip))
 	if parsed == nil {
 		return false, nil
 	}
-
-	blocked, err := a.ipMatchesList(ctx, ipListBlacklist, parsed)
+	rules, err := a.loadIPRules(ctx)
 	if err != nil {
 		return false, err
 	}
-	if blocked {
+	if anyContains(rules.blacklist, parsed) {
 		return false, nil
 	}
-
-	var enabledCount int64
-	if err := a.ipRules(ctx).
-		Where("list = ? AND enabled = ?", ipListWhitelist, true).
-		Count(&enabledCount).Error; err != nil {
-		return false, err
-	}
-	if enabledCount == 0 {
-		return true, nil
-	}
-	return a.ipMatchesList(ctx, ipListWhitelist, parsed)
+	return len(rules.whitelist) == 0 || anyContains(rules.whitelist, parsed), nil
 }
 
-func (a *Authorization) ipMatchesList(ctx context.Context, list string, ip net.IP) (bool, error) {
-	var rows []IPEntry
-	if err := a.ipRules(ctx).Where("list = ? AND enabled = ?", list, true).Find(&rows).Error; err != nil {
-		return false, err
+// loadIPRules returns the enabled rules, reading them with one query when the
+// cache is empty or older than CacheTTL.
+func (a *Authorization) loadIPRules(ctx context.Context) (ipRuleSet, error) {
+	c := a.ipAccess
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cacheTTL > 0 && !c.loadedAt.IsZero() && time.Since(c.loadedAt) < c.cacheTTL {
+		return c.rules, nil
 	}
+	var rows []IPEntry
+	if err := a.ipRules(ctx).Select("list", "cidr").Where("enabled = ?", true).Find(&rows).Error; err != nil {
+		return ipRuleSet{}, err
+	}
+	var rules ipRuleSet
 	for _, row := range rows {
 		n, err := parseIPNet(row.CIDR)
 		if err != nil {
 			continue
 		}
-		if n.Contains(ip) {
-			return true, nil
+		switch row.List {
+		case ipListWhitelist:
+			rules.whitelist = append(rules.whitelist, n)
+		case ipListBlacklist:
+			rules.blacklist = append(rules.blacklist, n)
 		}
 	}
-	return false, nil
+	c.rules, c.loadedAt = rules, time.Now()
+	return rules, nil
+}
+
+// invalidate makes the next check reload the rules.
+func (c *ipAccess) invalidate() {
+	c.mu.Lock()
+	c.loadedAt = time.Time{}
+	c.mu.Unlock()
+}
+
+func anyContains(nets []*net.IPNet, ip net.IP) bool {
+	return slices.ContainsFunc(nets, func(n *net.IPNet) bool { return n.Contains(ip) })
 }
 
 // checkIPAccess writes a 403 response when the client IP is denied.
@@ -342,7 +377,7 @@ func (a *Authorization) checkIPAccess(w http.ResponseWriter, r *http.Request) bo
 	if a.ipAccess == nil || !a.ipAccess.enabled {
 		return false
 	}
-	ok, err := a.allowClientIP(r.Context(), clientIP(r))
+	ok, err := a.allowClientIP(r.Context(), a.trustedClientIP(r))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, Map{
 			"code":    codeServerError,

@@ -32,6 +32,7 @@ const sidebars: SidebarsConfig = {
         'guides/credentials-login',
         'guides/mfa-totp',
         'guides/login-as',
+        'guides/login-protection-and-ip-access',
         'guides/sign-out',
         'guides/sessions-and-redis',
         'guides/cookies',

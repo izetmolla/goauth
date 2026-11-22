@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -33,7 +34,8 @@ type Config struct {
 	UserTableName    string
 	SessionTableName string
 	// TablePrefix is prepended to the names of the tables goauth owns:
-	// {prefix}verification_tokens and {prefix}totp. Empty uses
+	// {prefix}verification_tokens, {prefix}totp, {prefix}login_attempts and
+	// {prefix}ip_access_rules. Empty uses
 	// DefaultTablePrefix ("goauth_"). An explicit Verification.TableName or
 	// MFA.TOTP.TableName is used as is.
 	TablePrefix string
@@ -87,6 +89,13 @@ type Config struct {
 	// IPAccess enables whitelist / blacklist tables and enforces them on
 	// every goauth HTTP request. Off by default.
 	IPAccess IPAccessOptions
+
+	// TrustedProxies lists the reverse proxies (IPs or CIDRs, such as
+	// "10.0.0.0/8") whose X-Forwarded-For and X-Real-IP headers are believed
+	// when IPAccess and LoginProtection determine the client address. Empty
+	// means the headers are ignored and the TCP peer address is used, so set
+	// it when goauth runs behind a load balancer.
+	TrustedProxies []string
 }
 
 // Authorization is the configured authentication service. Create it once
@@ -125,7 +134,9 @@ type Authorization struct {
 	loginAs   *loginAsFeature
 	loginProt *loginProtection
 	ipAccess  *ipAccess
-	pages     map[string]string // page name -> path, only pages that are on
+	// trustedProxies are parsed Config.TrustedProxies.
+	trustedProxies []*net.IPNet
+	pages          map[string]string // page name -> path, only pages that are on
 
 	// Resolved once in New so hot paths never re-parse configuration.
 	accessTTL  time.Duration
@@ -193,13 +204,17 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err != nil {
 		return nil, fmt.Errorf("login_as: %w", err)
 	}
-	loginProt, err := newLoginProtection(cfg.LoginProtection)
+	loginProt, err := newLoginProtection(cfg.LoginProtection, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("login_protection: %w", err)
 	}
-	ipAccess, err := newIPAccess(cfg.IPAccess)
+	ipAccess, err := newIPAccess(cfg.IPAccess, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("ip_access: %w", err)
+	}
+	trustedProxies, err := parseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return nil, err
 	}
 
 	var cookies CookieOptions
@@ -238,6 +253,7 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		loginAs:                    loginAs,
 		loginProt:                  loginProt,
 		ipAccess:                   ipAccess,
+		trustedProxies:             trustedProxies,
 	}
 	if err := a.resolvePages(cfg.UI); err != nil {
 		return nil, err

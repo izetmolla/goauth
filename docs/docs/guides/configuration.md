@@ -91,18 +91,20 @@ auth, err := goauth.New(&goauth.Config{
 
 ## Table names
 
-goauth creates and owns two tables. Their names start with a prefix, `goauth_` by default, so they stay apart from your own tables:
+goauth creates and owns these tables (each only when its feature is on). Their names start with a prefix, `goauth_` by default, so they stay apart from your own tables:
 
 | Table | Default name | Created by | Exact name |
 |---|---|---|---|
 | Verification codes and links | `goauth_verification_tokens` | `auth.MigrateVerificationTokens` | `Verification.TableName` |
 | TOTP factors | `goauth_totp` | `auth.MigrateTOTP` | `MFA.TOTP.TableName` |
+| Login attempts | `goauth_login_attempts` | `auth.MigrateLoginAttempts` | `LoginProtection.TableName` |
+| IP access rules | `goauth_ip_access_rules` | `auth.MigrateIPAccess` | `IPAccess.TableName` |
 
 Change the prefix for every instance in your package's `init` function, or for one instance with `Config.TablePrefix`:
 
 ```go
 func init() {
-	goauth.DefaultTablePrefix = "auth_" // auth_verification_tokens, auth_totp
+	goauth.DefaultTablePrefix = "auth_" // auth_verification_tokens, auth_totp, ...
 }
 
 auth, err := goauth.New(&goauth.Config{

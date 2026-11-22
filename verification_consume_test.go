@@ -134,14 +134,14 @@ func TestHandleResetCheckRejectsUsedToken(t *testing.T) {
 
 	h := a.Handler()
 	csrfRec := httptest.NewRecorder()
-	h.ServeHTTP(csrfRec, httptest.NewRequest(http.MethodGet, DefaultBasePath+"/csrf", nil))
+	h.ServeHTTP(csrfRec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/csrf", nil))
 	var csrfBody map[string]string
 	_ = json.NewDecoder(csrfRec.Body).Decode(&csrfBody)
 
 	body := url.Values{
 		"vid": {id}, "token": {tok}, "csrfToken": {csrfBody["csrfToken"]},
 	}.Encode()
-	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/password/check", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/password/check", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	for _, c := range csrfRec.Result().Cookies() {
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 	h := a.Handler()
 	csrfRec := httptest.NewRecorder()
-	h.ServeHTTP(csrfRec, httptest.NewRequest(http.MethodGet, DefaultBasePath+"/csrf", nil))
+	h.ServeHTTP(csrfRec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/csrf", nil))
 	var csrfBody map[string]string
 	_ = json.NewDecoder(csrfRec.Body).Decode(&csrfBody)
 
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 		"password_confirm": {"NewPass1!"}, "redirectUrl": {"/projects"},
 		"csrfToken": {csrfBody["csrfToken"]},
 	}.Encode()
-	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/password/reset", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/password/reset", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	for _, c := range csrfRec.Result().Cookies() {

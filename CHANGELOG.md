@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.9.0
+
+### Added
+
+- **Login protection** (`Config.LoginProtection`): locks an identifier after `MaxFailures` wrong passwords for `LockoutFor`. Table `goauth_login_attempts` (`auth.MigrateLoginAttempts`).
+- **IP access rules** (`Config.IPAccess`): whitelist and blacklist entries enforced on every goauth request, with runtime CRUD (`AddWhitelistIP`, `ListBlacklistIPs`, ...). Table `goauth_ip_access_rules` (`auth.MigrateIPAccess`). Enabled rules are cached for `IPAccess.CacheTTL` (default 30s), so a request costs no database query.
+- `POST {base}/password/check` (`auth.HandleResetCheck`): checks a reset link or code without consuming it.
+- `Config.TrustedProxies`: the proxies whose `X-Forwarded-For` / `X-Real-IP` headers are believed by IP access and login protection. Without it the TCP peer address is used, so clients cannot spoof their address.
+- A successful password reset signs the user in and clears their login lockout.
+
+### Notes
+
+- Login failures are counted with atomic database updates, so parallel wrong passwords all count.
+- Stored user agents and device ids are truncated on a character boundary, so writes never fail on invalid UTF-8.
+
 ## v1.8.0
 
 ### Changed

@@ -234,10 +234,7 @@ func (a *Authorization) HandleResetCheck(w http.ResponseWriter, r *http.Request)
 		a.verificationFailed(w, r, pageForgot, err)
 		return
 	}
-	left := int(time.Until(row.ExpiresAt.UTC()).Seconds())
-	if left < 0 {
-		left = 0
-	}
+	left := max(int(time.Until(row.ExpiresAt.UTC()).Seconds()), 0)
 	a.stepResponse(w, r, pageForgot, stepReset, row.ID, "Reset link is still valid.", Map{
 		"expires_in": left,
 		"expires_at": row.ExpiresAt.UTC().Format(time.RFC3339),
@@ -296,6 +293,9 @@ func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Reque
 	if mv := a.verify.opts.MarkVerified; mv != nil {
 		_ = mv(ctx, row.UserID)
 	}
+	// Resetting the password proves control of the email, so a lockout
+	// left by earlier wrong passwords no longer applies.
+	a.clearLoginFailuresFor(ctx, normalizeEmail(row.Identifier))
 	user := Map{"id": row.UserID}
 	if row.Identifier != "" {
 		user[inputEmail] = row.Identifier
