@@ -71,6 +71,7 @@ func (a *Authorization) verifyError(ctx context.Context, kind VerificationKind, 
 func (a *Authorization) codeExtras(f *verifyFeature) Map {
 	return Map{
 		"resend_after": int(max(f.code.ResendAfter, 0) / time.Second),
+		"expires_in":   int(max(f.code.TTL, 0) / time.Second),
 		"code_length":  f.code.Length,
 		"has_code":     f.code.Delivery.hasCode(),
 		"has_link":     f.code.Delivery.hasLink(),
@@ -150,11 +151,19 @@ func (a *Authorization) startVerification(w http.ResponseWriter, r *http.Request
 
 // verificationFailed writes the error for a failed code or token check.
 func (a *Authorization) verificationFailed(w http.ResponseWriter, r *http.Request, page string, err error) {
-	if errors.Is(err, ErrVerificationInvalid) {
-		a.failure(w, r, page, http.StatusBadRequest, codeInvalidCode, "That code is invalid or has expired. Request a new one and try again.", stepCode)
-		return
+	switch {
+	case errors.Is(err, ErrVerificationExpired):
+		a.failure(w, r, page, http.StatusBadRequest, codeCodeExpired,
+			"That code or link has expired. Request a new one and try again.", stepCode)
+	case errors.Is(err, ErrVerificationUsed):
+		a.failure(w, r, page, http.StatusBadRequest, codeCodeUsed,
+			"That code or link has already been used. Request a new one if you still need to reset your password.", stepCode)
+	case errors.Is(err, ErrVerificationInvalid):
+		a.failure(w, r, page, http.StatusBadRequest, codeInvalidCode,
+			"That code is invalid or has expired. Request a new one and try again.", stepCode)
+	default:
+		a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 	}
-	a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 }
 
 // checkVerification is the shared "here is my code / link" step. It writes
@@ -239,6 +248,11 @@ func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Reque
 		}
 		a.failure(w, r, pageForgot, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 		return
+	}
+	// Burn any other live reset emails for this address so an older link
+	// cannot change the password again after this one succeeded.
+	if err := a.consumeSiblingVerifications(ctx, f, row.Identifier, row.ID); err != nil {
+		a.verifyError(ctx, f.kind, row.Identifier, err)
 	}
 	if !opts.KeepSessions {
 		if err := a.revokeUserSessions(ctx, row.UserID); err != nil {

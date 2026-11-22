@@ -34,6 +34,8 @@ const (
 	codeBadRequest        = "BAD_REQUEST"
 	codeEmailNotVerified  = "EMAIL_NOT_VERIFIED"
 	codeInvalidCode       = "INVALID_CODE"
+	codeCodeExpired       = "CODE_EXPIRED"
+	codeCodeUsed          = "CODE_USED"
 	codeInvalidEmail      = "INVALID_EMAIL"
 	codeWeakPassword      = "WEAK_PASSWORD"
 	codePasswordMismatch  = "PASSWORD_MISMATCH"

@@ -117,6 +117,8 @@ var errorMessages = map[string]string{
 	codeServerError:       "Something went wrong on our side. Please try again.",
 	codeEmailNotVerified:  "Please confirm your email first. We've sent you a new confirmation email.",
 	codeInvalidCode:       "That code is invalid or has expired. Request a new one and try again.",
+	codeCodeExpired:       "That code or link has expired. Request a new one and try again.",
+	codeCodeUsed:          "That code or link has already been used. Request a new one if you still need to reset your password.",
 	codeInvalidEmail:      "Enter a valid email address.",
 	codeWeakPassword:      "That password is too short.",
 }

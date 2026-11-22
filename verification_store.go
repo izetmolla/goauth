@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strconv"
 	"time"
 	"uuid"
 
@@ -11,9 +12,12 @@ import (
 )
 
 // Errors returned to clients by the verification endpoints. They never say
-// whether an account exists.
+// whether an account exists. Expired and already-used are split out so the
+// UI can explain what happened without probing accounts.
 var (
 	ErrVerificationInvalid = errors.New("that code or link is invalid or has expired")
+	ErrVerificationExpired = errors.New("that code or link has expired")
+	ErrVerificationUsed    = errors.New("that code or link has already been used")
 )
 
 // MigrateVerificationTokens creates or updates the verification table with
@@ -85,8 +89,14 @@ func (a *Authorization) issueVerification(ctx context.Context, f *verifyFeature,
 	if f.code.Delivery.hasLink() {
 		token := randomString(32)
 		row.TokenHash = a.verify.tokenHash(f.kind, token)
-		// The link names the verification by id, never by email.
-		msg.Link = origin + a.pagePath(pageForKind(f.kind)) + "?" + url.Values{fieldVID: {id}, fieldToken: {token}}.Encode()
+		// The link names the verification by id, never by email. `exp` is
+		// only for the client's countdown; the server always re-checks
+		// expires_at (and rejects forged values).
+		msg.Link = origin + a.pagePath(pageForKind(f.kind)) + "?" + url.Values{
+			fieldVID:   {id},
+			fieldToken: {token},
+			"exp":      {strconv.FormatInt(row.ExpiresAt.Unix(), 10)},
+		}.Encode()
 	}
 	if err := a.verificationTable(ctx).Create(&row).Error; err != nil {
 		return nil, err
@@ -120,9 +130,51 @@ func validVID(vid string) bool {
 }
 
 // findLive loads the unused, unexpired verification the input points at.
+// When the row exists but can no longer be used, it returns
+// ErrVerificationExpired or ErrVerificationUsed so the client can explain.
 func (a *Authorization) findLive(ctx context.Context, f *verifyFeature, in verifyInput) (*VerificationToken, error) {
+	row, err := a.loadVerification(ctx, f, in, true)
+	if err == nil {
+		if in.email != "" && row.Identifier != in.email {
+			return nil, ErrVerificationInvalid
+		}
+		if time.Now().UTC().After(row.ExpiresAt.UTC()) {
+			return nil, ErrVerificationExpired
+		}
+		return row, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	// No live row: see whether this id/token was already used or simply
+	// expired, so the UI can say which. Email+code lookups stay opaque.
+	if in.vid == "" && in.token == "" {
+		return nil, ErrVerificationInvalid
+	}
+	stale, serr := a.loadVerification(ctx, f, in, false)
+	if serr != nil {
+		if errors.Is(serr, gorm.ErrRecordNotFound) {
+			return nil, ErrVerificationInvalid
+		}
+		return nil, serr
+	}
+	if stale.ConsumedAt != nil {
+		return nil, ErrVerificationUsed
+	}
+	if time.Now().UTC().After(stale.ExpiresAt.UTC()) {
+		return nil, ErrVerificationExpired
+	}
+	return nil, ErrVerificationInvalid
+}
+
+// loadVerification finds a verification row by vid, token, or email.
+// When liveOnly is set, consumed rows are excluded.
+func (a *Authorization) loadVerification(ctx context.Context, f *verifyFeature, in verifyInput, liveOnly bool) (*VerificationToken, error) {
 	var row VerificationToken
-	q := a.verificationTable(ctx).Where("kind = ? AND consumed_at IS NULL", f.kind)
+	q := a.verificationTable(ctx).Where("kind = ?", f.kind)
+	if liveOnly {
+		q = q.Where("consumed_at IS NULL")
+	}
 	switch {
 	case in.vid != "":
 		if !validVID(in.vid) {
@@ -137,13 +189,7 @@ func (a *Authorization) findLive(ctx context.Context, f *verifyFeature, in verif
 		return nil, ErrVerificationInvalid
 	}
 	if err := q.Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrVerificationInvalid
-		}
 		return nil, err
-	}
-	if time.Now().UTC().After(row.ExpiresAt.UTC()) || (in.email != "" && row.Identifier != in.email) {
-		return nil, ErrVerificationInvalid
 	}
 	return &row, nil
 }
@@ -229,6 +275,21 @@ func (a *Authorization) revokeUserSessions(ctx context.Context, userID string) e
 	// Redis copies need no cleanup: every lookup re-checks the database,
 	// which now reports these sessions as signed out.
 	return err
+}
+
+// consumeSiblingVerifications retires every other live code/link for the
+// same feature and email, so an older reset email cannot set the password
+// again after a successful reset (or a newer send).
+func (a *Authorization) consumeSiblingVerifications(ctx context.Context, f *verifyFeature, identifier, exceptID string) error {
+	if identifier == "" {
+		return nil
+	}
+	q := a.verificationTable(ctx).
+		Where("kind = ? AND identifier = ? AND consumed_at IS NULL", f.kind, identifier)
+	if exceptID != "" {
+		q = q.Where("id <> ?", exceptID)
+	}
+	return q.Update("consumed_at", time.Now().UTC()).Error
 }
 
 // pageForKind is the page a verification link opens. Links are only sent
