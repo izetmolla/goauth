@@ -121,6 +121,7 @@ var errorMessages = map[string]string{
 	codeCodeUsed:          "That code or link has already been used. Request a new one if you still need to reset your password.",
 	codeInvalidEmail:      "Enter a valid email address.",
 	codeWeakPassword:      "That password is too short.",
+	codeLoginLocked:       "Too many incorrect sign-in attempts. Try again later.",
 }
 
 // SignInPage implements GET {base}/signin: every enabled provider as a

@@ -246,9 +246,10 @@ func (a *Authorization) HandleResetCheck(w http.ResponseWriter, r *http.Request)
 
 // HandleResetPassword implements POST {base}/password/reset: it checks the
 // token (from the reset link or from HandleResetVerifyCode) or the code,
-// stores the new password with SetPassword and signs the user out
-// everywhere (unless PasswordReset.KeepSessions). When password_confirm is
-// sent it must match password.
+// stores the new password with SetPassword, signs the user out everywhere
+// (unless PasswordReset.KeepSessions), then signs them in with a fresh
+// session (JSON clients get type=sign_in; HTML gets the callback page).
+// When password_confirm is sent it must match password.
 func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
 	f, ok := a.featureOn(w, func(v *verification) *verifyFeature { return &v.reset })
 	if !ok {
@@ -295,7 +296,11 @@ func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Reque
 	if mv := a.verify.opts.MarkVerified; mv != nil {
 		_ = mv(ctx, row.UserID)
 	}
-	a.stepResponse(w, r, pageForgot, stepDone, "", "Your password has been updated. You can sign in now.", nil)
+	user := Map{"id": row.UserID}
+	if row.Identifier != "" {
+		user[inputEmail] = row.Identifier
+	}
+	a.finishSignIn(w, r, pageForgot, row.UserID, user, "password_reset", in.redirect)
 }
 
 // --- One-time code sign-in ------------------------------------------------------

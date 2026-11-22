@@ -123,7 +123,7 @@ func (a *Authorization) Handler() http.Handler {
 	if p := a.pagePath(pageOTP); p != "" && p != base+"/otp/verify" {
 		route("GET "+base+"/otp/verify", a.OTPPage)
 	}
-	return mux
+	return a.wrapIPAccess(mux)
 }
 
 // providerIDFromRequest resolves the {provider} route parameter. It prefers

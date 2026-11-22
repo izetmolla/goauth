@@ -159,6 +159,74 @@ func TestHandleResetCheckRejectsUsedToken(t *testing.T) {
 	}
 }
 
+func TestHandleResetPasswordSignsIn(t *testing.T) {
+	a := testVerificationAuth(t)
+	ctx := context.Background()
+	if err := a.db.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  type TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  method TEXT,
+  logged_by TEXT,
+  account TEXT,
+  expires_at DATETIME,
+  is_deleted NUMERIC DEFAULT 0,
+  created_at DATETIME,
+  updated_at DATETIME,
+  deleted_at DATETIME
+);`).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	id := "88888888-8888-4888-8888-888888888888"
+	tok := "reset-signin-tok"
+	row := VerificationToken{
+		ID: id, Kind: KindPasswordReset, Identifier: "a@x.io", UserID: "u1",
+		TokenHash: a.verify.tokenHash(KindPasswordReset, tok),
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+	}
+	if err := a.verificationTable(ctx).Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	h := a.Handler()
+	csrfRec := httptest.NewRecorder()
+	h.ServeHTTP(csrfRec, httptest.NewRequest(http.MethodGet, DefaultBasePath+"/csrf", nil))
+	var csrfBody map[string]string
+	_ = json.NewDecoder(csrfRec.Body).Decode(&csrfBody)
+
+	body := url.Values{
+		"vid": {id}, "token": {tok}, "password": {"NewPass1!"},
+		"password_confirm": {"NewPass1!"}, "redirectUrl": {"/projects"},
+		"csrfToken": {csrfBody["csrfToken"]},
+	}.Encode()
+	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/password/reset", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	for _, c := range csrfRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["type"] != "sign_in" {
+		t.Fatalf("type=%v want sign_in body=%s", out["type"], rec.Body.String())
+	}
+	if out["redirect_url"] != "/projects" {
+		t.Fatalf("redirect_url=%v want /projects", out["redirect_url"])
+	}
+	if out["session_id"] == nil || out["session_id"] == "" {
+		t.Fatalf("missing session_id: %v", out)
+	}
+}
+
 func TestConsumeSiblingVerifications(t *testing.T) {
 	a := testVerificationAuth(t)
 	ctx := context.Background()

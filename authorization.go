@@ -78,6 +78,15 @@ type Config struct {
 	// LoginAs configures admin impersonation (GET/POST {base}/login_as).
 	// Off by default.
 	LoginAs LoginAsOptions
+
+	// LoginProtection persists failed credentials attempts and locks an
+	// identifier after too many wrong passwords. Off by default; when
+	// Enabled, MaxFailures and LockoutFor must be set explicitly.
+	LoginProtection LoginProtectionOptions
+
+	// IPAccess enables whitelist / blacklist tables and enforces them on
+	// every goauth HTTP request. Off by default.
+	IPAccess IPAccessOptions
 }
 
 // Authorization is the configured authentication service. Create it once
@@ -114,6 +123,8 @@ type Authorization struct {
 	verify    *verification
 	totp      *totpMFA
 	loginAs   *loginAsFeature
+	loginProt *loginProtection
+	ipAccess  *ipAccess
 	pages     map[string]string // page name -> path, only pages that are on
 
 	// Resolved once in New so hot paths never re-parse configuration.
@@ -182,6 +193,14 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err != nil {
 		return nil, fmt.Errorf("login_as: %w", err)
 	}
+	loginProt, err := newLoginProtection(cfg.LoginProtection)
+	if err != nil {
+		return nil, fmt.Errorf("login_protection: %w", err)
+	}
+	ipAccess, err := newIPAccess(cfg.IPAccess)
+	if err != nil {
+		return nil, fmt.Errorf("ip_access: %w", err)
+	}
 
 	var cookies CookieOptions
 	if cfg.Cookies != nil {
@@ -217,6 +236,8 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		verify:                     verify,
 		totp:                       totp,
 		loginAs:                    loginAs,
+		loginProt:                  loginProt,
+		ipAccess:                   ipAccess,
 	}
 	if err := a.resolvePages(cfg.UI); err != nil {
 		return nil, err

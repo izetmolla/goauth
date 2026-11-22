@@ -224,12 +224,14 @@ function Features() {
 const providers = [
   {name: 'Google', to: '/docs/providers/google', kind: 'OIDC'},
   {name: 'Azure AD / Entra ID', to: '/docs/providers/azure-ad', kind: 'OIDC'},
+  {name: 'GitHub', to: '/docs/providers/presets/github', kind: 'OAuth 2.0'},
+  {name: 'Discord', to: '/docs/providers/presets/discord', kind: 'OAuth 2.0'},
+  {name: 'Keycloak', to: '/docs/providers/presets/keycloak', kind: 'OIDC'},
+  {name: 'Auth0', to: '/docs/providers/presets/auth0', kind: 'OIDC'},
   {name: 'Email & password', to: '/docs/guides/credentials-login', kind: 'Credentials'},
   {name: 'Passkey', to: '/docs/providers/passkey', kind: 'WebAuthn'},
   {name: 'Authenticator MFA', to: '/docs/guides/mfa-totp', kind: 'TOTP'},
-  {name: 'Login as', to: '/docs/guides/login-as', kind: 'Admin'},
-  {name: 'GitHub', to: '/docs/custom-providers/examples', kind: 'OAuth 2.0'},
-  {name: 'Keycloak', to: '/docs/custom-providers/examples', kind: 'OIDC'},
+  {name: 'All presets', to: '/docs/providers/presets/catalog', kind: '80+'},
   {name: 'Your own provider', to: '/docs/custom-providers/step-by-step', kind: 'Any'},
 ];
 

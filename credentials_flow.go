@@ -201,10 +201,18 @@ func (a *Authorization) handleCredentials(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Lockout only applies to sign-in, not registration.
+	if !register && a.checkLoginLockout(w, r, page, in.values) {
+		return
+	}
+
 	user, err := fn(r.Context(), in.values, r)
 	var ce *CredentialsError
 	switch {
 	case errors.As(err, &ce):
+		if !register {
+			a.recordLoginFailure(r.Context(), r, in.values)
+		}
 		a.failure(w, r, page, http.StatusUnauthorized, failCode, cmp.Or(ce.Message, failMessage), ce.Field)
 		return
 	case err != nil:
@@ -213,11 +221,18 @@ func (a *Authorization) handleCredentials(w http.ResponseWriter, r *http.Request
 		a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 		return
 	case user == nil:
+		if !register {
+			a.recordLoginFailure(r.Context(), r, in.values)
+		}
 		a.failure(w, r, page, http.StatusUnauthorized, failCode, failMessage, "")
 		return
 	case user.ID == "":
 		a.failure(w, r, page, http.StatusInternalServerError, codeServerError, msgSomethingWrong, "")
 		return
+	}
+
+	if !register {
+		a.clearLoginFailures(r.Context(), in.values, r)
 	}
 
 	if v := a.verify; v != nil && v.confirm.enabled {

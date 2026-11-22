@@ -1,15 +1,38 @@
-# goauth
+# goauth - **Authentication for Go.**
 
-Framework-agnostic authentication and authorization module for Go, built entirely on `net/http`. It provides OAuth 2.0 / OpenID Connect sign-in (Google, Azure AD, ...), credentials authentication, JWT access/refresh tokens, database-backed sessions (GORM) with optional Redis caching, cookie handling, CSRF protection, and role-based access control.
+**Framework-agnostic authentication and authorization for Go**
+
+![Documentation](https://img.shields.io/badge/docs-goauth.izetmolla.com-1fa2f0?style=flat-square)![Go Reference](https://pkg.go.dev/badge/github.com/izetmolla/goauth.svg)![MIT License](https://img.shields.io/badge/license-MIT-2ee6b6?style=flat-square)
+
+![goauth cover — Authentication for Go](docs/static/img/cover.svg)
+
+Framework-agnostic authentication and authorization module for Go, built entirely on `net/http`. It provides OAuth 2.0 / OpenID Connect sign-in (Google, Azure AD, …), credentials authentication, passkeys, optional TOTP MFA, JWT access/refresh tokens, database-backed sessions (GORM) with optional Redis caching, cookie handling, CSRF protection, and role-based access control.
 
 Because every handler is a plain `http.Handler` and every middleware is a standard `func(http.Handler) http.Handler`, goauth plugs into **any** Go web framework — the standard library, [Fiber](examples/fiber/README.md), [Gin](examples/gin/README.md), [Echo](examples/echo/README.md), chi, gorilla/mux, and so on.
+
+## Documentation
+
+Full guides, API walkthroughs, and framework examples:
+
+**https://goauth.izetmolla.com/**
+
+| Topic | Link |
+|-------|------|
+| Quick start | [goauth.izetmolla.com/docs/getting-started/quick-start](https://goauth.izetmolla.com/docs/getting-started/quick-start) |
+| Configuration | [goauth.izetmolla.com/docs/guides/configuration](https://goauth.izetmolla.com/docs/guides/configuration) |
+| Authenticator MFA (TOTP) | [goauth.izetmolla.com/docs/guides/mfa-totp](https://goauth.izetmolla.com/docs/guides/mfa-totp) |
+| Login as | [goauth.izetmolla.com/docs/guides/login-as](https://goauth.izetmolla.com/docs/guides/login-as) |
+| Passkeys | [goauth.izetmolla.com/docs/providers/passkey](https://goauth.izetmolla.com/docs/providers/passkey) |
+| All provider presets | [goauth.izetmolla.com/docs/providers/presets/catalog](https://goauth.izetmolla.com/docs/providers/presets/catalog) |
+| Frameworks | [goauth.izetmolla.com/docs/frameworks/net-http](https://goauth.izetmolla.com/docs/frameworks/net-http) |
+| Go API reference | [pkg.go.dev/github.com/izetmolla/goauth](https://pkg.go.dev/github.com/izetmolla/goauth) |
 
 ## Features
 
 - **OAuth 2.0 / OIDC sign-in** with discovery, PKCE, `state`, and `nonce` checks
 - **Provider presets**: [Google](providers/google/README.md), [Azure AD / Entra ID](providers/azuread/README.md), [Credentials](providers/credentials/README.md), [Passkey](providers/passkey/README.md)
-- **Authenticator MFA (TOTP)**: Google / Microsoft Authenticator–style codes — off by default, GORM-backed per-user enable/disable ([guide](docs/docs/guides/mfa-totp.md))
-- **Login as**: admin impersonation via `{base}/login_as?user_id=` — off by default, `logged_by` on sessions and JWTs ([guide](docs/docs/guides/login-as.md))
+- **Authenticator MFA (TOTP)**: Google / Microsoft Authenticator–style codes — off by default ([docs](https://goauth.izetmolla.com/docs/guides/mfa-totp))
+- **Login as**: admin impersonation via `{base}/login_as?user_id=` — off by default ([docs](https://goauth.izetmolla.com/docs/guides/login-as))
 - **JWT tokens**: HS256/HS384/HS512 access + refresh token pairs with configurable lifetimes (`"60s"`, `"15m"`, `"7d"`, `"1y"`, ...)
 - **Sessions**: persisted via GORM (any SQL database), optionally cached in Redis
 - **Two protection modes**: Bearer-JWT for APIs and session-cookie (with sign-in redirect) for server-rendered pages
@@ -88,10 +111,10 @@ func main() {
 | `POST` | `{base}/provider/{provider}/register` | `HandleRegister` | Credentials sign-up (`CredentialsProvider.Register`), then signs the user in. **Off by default** (`Endpoints.EnableRegister`) |
 | `GET` | `{base}/csrf` | `GetCSRFToken` | CSRF token for custom credentials forms |
 | `POST` | `{base}/signout` | `HandleSignOut` | Revokes the current session (cookie or refresh token) and clears the cookie. Off with `Endpoints.DisableSignOut` |
-| `GET` | `UI.SignInEndpoint`, `UI.RegisterEndpoint`, `UI.ForgotPasswordEndpoint`, `UI.OTPEndpoint`, `UI.VerifyEndpoint` (defaults `{base}/signin`, `/register`, `/forgot`, `/otp`, `/verify-email`) | `SignInPage`, `RegisterPage`, … | Built-in pages (embedded HTML, CSS, JS). **All off by default**: turn on with `UI.EnableAllUI` or one by one — see [Built-in pages](docs/docs/guides/sign-in-page.md) |
-| `POST` | `{base}/password/*`, `/otp/*`, `/verify-email*` | `HandleForgotPassword`, … | Password reset, one-time-code sign-in and email confirmation — see [Verification](docs/docs/guides/verification.md). **Off by default** |
-| `GET`/`POST` | `{base}/mfa/totp/*` | `HandleTOTPStatus`, … | Authenticator MFA enroll / disable / verify — see [MFA TOTP](docs/docs/guides/mfa-totp.md). **Off by default** |
-| `GET`/`POST` | `{base}/login_as` | `HandleLoginAs` | Admin login-as another user — see [Login as](docs/docs/guides/login-as.md). **Off by default** |
+| `GET` | `UI.SignInEndpoint`, `UI.RegisterEndpoint`, `UI.ForgotPasswordEndpoint`, `UI.OTPEndpoint`, `UI.VerifyEndpoint` (defaults `{base}/signin`, `/register`, `/forgot`, `/otp`, `/verify-email`) | `SignInPage`, `RegisterPage`, … | Built-in pages (embedded HTML, CSS, JS). **All off by default**: turn on with `UI.EnableAllUI` or one by one — see [Built-in pages](https://goauth.izetmolla.com/docs/guides/sign-in-page) |
+| `POST` | `{base}/password/*`, `/otp/*`, `/verify-email*` | `HandleForgotPassword`, … | Password reset, one-time-code sign-in and email confirmation — see [Verification](https://goauth.izetmolla.com/docs/guides/verification). **Off by default** |
+| `GET`/`POST` | `{base}/mfa/totp/*` | `HandleTOTPStatus`, … | Authenticator MFA enroll / disable / verify — see [MFA TOTP](https://goauth.izetmolla.com/docs/guides/mfa-totp). **Off by default** |
+| `GET`/`POST` | `{base}/login_as` | `HandleLoginAs` | Admin login-as another user — see [Login as](https://goauth.izetmolla.com/docs/guides/login-as). **Off by default** |
 | `GET` | `{base}/assets/{file}` | — | The page's versioned CSS/JS |
 
 The sign-in APIs are on by default. Sign-up (`Endpoints.EnableRegister`), the verification features (`Config.Verification`) and every HTML page (`UI.EnableAllUI`, or `UI.EnableSignInPage`, `EnableRegisterPage`, `EnableForgotPasswordPage`, `EnableOTPPage`, `EnableVerifyPage`) are off until you enable them. Serve the pages at your own paths with `UI.SignInEndpoint: "/sign-in"` and friends. Switch built-in APIs off with `Config.Endpoints` (`DisableCredentials`, `DisableCSRF`, `DisableProviders`, `DisableSignOut`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
@@ -208,3 +231,7 @@ See [`examples/README.md`](examples/README.md) for how to run and test them.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+[Documentation](https://goauth.izetmolla.com/) · [pkg.go.dev](https://pkg.go.dev/github.com/izetmolla/goauth) · [GitHub](https://github.com/izetmolla/goauth)

@@ -1,0 +1,10 @@
+{
+  "label": "All presets",
+  "position": 10,
+  "collapsed": true,
+  "link": {
+    "type": "generated-index",
+    "title": "All provider presets",
+    "description": "Usage pages for every OAuth / OIDC provider preset shipped with goauth. Open the catalog for a full table."
+  }
+}

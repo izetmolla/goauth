@@ -120,12 +120,18 @@ and listed by `GET /api/authorization/providers`.
 | Zoom | `providers/zoom` | OAuth | `zoom` |
 | Passkey | `providers/passkey` | WebAuthn | `passkey` |
 
-Detailed setup notes for a few presets:
+Detailed docs for every preset (usage, id, scopes, redirect URI):
+
+**https://goauth.izetmolla.com/docs/providers/presets/catalog**
+
+Package READMEs for a few presets:
 
 - [google/README.md](google/README.md)
 - [azuread/README.md](azuread/README.md)
 - [credentials/README.md](credentials/README.md)
 - [passkey/README.md](passkey/README.md)
+- [github/README.md](github/README.md)
+- [apple/README.md](apple/README.md)
 
 ### Not included (non-OAuth Auth.js types)
 

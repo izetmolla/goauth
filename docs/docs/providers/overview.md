@@ -11,10 +11,12 @@ Providers are registered in `Config.Providers`. Their order is the order returne
 Providers: []goauth.Provider{
 	google.New(googleID, googleSecret),
 	azuread.New(azuread.Options{ClientID: azID, ClientSecret: azSecret, TenantID: tenant}),
-	githubProvider(), // a custom goauth.OAuthProvider
+	github.New(github.Options{ClientID: ghID, ClientSecret: ghSecret}),
 	credentials.New(credentials.Options{ /* ... */ }),
 },
 ```
+
+## Featured guides
 
 | Provider | id | Type | Page |
 |---|---|---|---|
@@ -22,9 +24,20 @@ Providers: []goauth.Provider{
 | Azure AD / Entra ID | `azuread-v2` | `oidc` | [Azure AD](./azure-ad.md) |
 | Credentials | `credentials` (configurable) | `credentials` | [Credentials](./credentials.md) |
 | Passkey | `passkey` | WebAuthn | [Passkey](./passkey.md) |
-| Your own | anything | `oauth` / `oidc` | [Custom providers](../custom-providers/overview.md) |
 
-Dozens of Auth.js-style OAuth/OIDC presets also ship under `providers/*` (GitHub, Discord, Keycloak, …). They follow the same `New(Options)` pattern as Google; see the package READMEs and [Custom providers](../custom-providers/overview.md).
+## All OAuth / OIDC presets
+
+Every Auth.js-style preset ships under `providers/<package>` with a usage page:
+
+**[Browse all presets →](./presets/catalog.md)**
+
+Each page shows import path, `New(Options)` example, provider `id`, default scopes, endpoints, and redirect URI.
+
+Redirect URI pattern:
+
+```text
+{AuthURL}/api/authorization/provider/{id}/callback
+```
 
 Second-factor **TOTP** is not a provider — configure `Config.MFA.TOTP` ([guide](../guides/mfa-totp.md)).
 
@@ -59,3 +72,7 @@ For example, `https://app.example.com/api/authorization/provider/google/callback
 ## Multiple providers, one user
 
 `ResolveUser` receives `profile["provider"]`, so you can link several providers to one user. See [One user, several providers](../guides/oauth-sign-in.md#one-user-several-providers).
+
+## Writing your own
+
+See [Custom providers](../custom-providers/overview.md) to wrap any OAuth 2.0 / OIDC server with a plain `goauth.OAuthProvider`.
