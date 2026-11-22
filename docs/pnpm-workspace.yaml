@@ -6,3 +6,11 @@ allowBuilds:
   core-js: false
   esbuild: true
   workerd: true
+
+# SWC 1.16.12+ ships native binaries in a self-extracting "carrier" format
+# that refuses to load on Cloudflare's build image (ERR_SWC_NATIVE_CACHE:
+# its cache dirs have a world-writable parent). 1.16.2 is the last plain
+# binary release. Drop this once a newer SWC loads there.
+overrides:
+  '@swc/core': 1.16.2
+  '@swc/html': 1.16.2
