@@ -37,7 +37,7 @@ if err := auth.MigrateTOTP(ctx); err != nil {
 }
 ```
 
-`MigrateTOTP` creates the TOTP table (default name `goauth_totp`). Secrets are encrypted with a key derived from `JWTSecret`; backup codes are stored only as keyed hashes.
+`MigrateTOTP` creates the TOTP table (default name `goauth_totp`: the [table prefix](./configuration.md#table-names) followed by `totp`). Secrets are encrypted with a key derived from `JWTSecret`; backup codes are stored only as keyed hashes.
 
 ### Manual SQL (optional)
 

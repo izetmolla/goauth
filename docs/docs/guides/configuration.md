@@ -40,6 +40,7 @@ auth, err := goauth.New(&goauth.Config{
 	DB:               db,         // required *gorm.DB
 	UserTableName:    "users",    // default "users"
 	SessionTableName: "sessions", // default "sessions"
+	TablePrefix:      "goauth_",  // prefix of the tables goauth owns; default goauth.DefaultTablePrefix
 
 	Redis:       redisClient,      // optional *redis.Client session cache
 	RedisPrefix: "AUTHSESSIONS",   // default "AUTHSESSIONS"
@@ -72,6 +73,7 @@ auth, err := goauth.New(&goauth.Config{
 | `DB` | **required** | Any GORM database. |
 | `UserTableName` | `users` | Must have `id` and `roles` columns. |
 | `SessionTableName` | `sessions` | See [Database setup](../getting-started/database-setup.md). |
+| `TablePrefix` | `goauth_` | Prefix of the tables goauth owns. See [Table names](#table-names). |
 | `Redis` | none | See [Sessions and Redis](./sessions-and-redis.md). |
 | `RedisPrefix` | `AUTHSESSIONS` | Keys look like `AUTHSESSIONS:<session id>`. |
 | `RedisTTL` | `30m` | How long a cached session lives in Redis. |
@@ -86,6 +88,30 @@ auth, err := goauth.New(&goauth.Config{
 | `MFA` | TOTP off | Authenticator-app MFA. See [Authenticator MFA](./mfa-totp.md). |
 | `LoginAs` | off | Admin impersonation (`/login_as`). See [Login as](./login-as.md). |
 | `KeepRefreshTokenServerSide` | `false` | Keep the refresh token out of the OAuth callback page; web clients refresh with the session cookie. See [Tokens and refresh](./tokens-and-refresh.md#keeping-the-refresh-token-out-of-the-browser). |
+
+## Table names
+
+goauth creates and owns two tables. Their names start with a prefix, `goauth_` by default, so they stay apart from your own tables:
+
+| Table | Default name | Created by | Exact name |
+|---|---|---|---|
+| Verification codes and links | `goauth_verification_tokens` | `auth.MigrateVerificationTokens` | `Verification.TableName` |
+| TOTP factors | `goauth_totp` | `auth.MigrateTOTP` | `MFA.TOTP.TableName` |
+
+Change the prefix for every instance in your package's `init` function, or for one instance with `Config.TablePrefix`:
+
+```go
+func init() {
+	goauth.DefaultTablePrefix = "auth_" // auth_verification_tokens, auth_totp
+}
+
+auth, err := goauth.New(&goauth.Config{
+	TablePrefix: "billing_auth_", // this instance only
+	// ...
+})
+```
+
+Set `goauth.DefaultTablePrefix = ""` for unprefixed names. An explicit `TableName` is always used as is. The users and sessions tables are not prefixed: set them with `UserTableName` and `SessionTableName`.
 
 ## Duration format
 
@@ -186,6 +212,7 @@ goauth.DefaultRedisTTL             // 30 * time.Minute
 goauth.DefaultRedisPrefix          // "AUTHSESSIONS"
 goauth.DefaultCookieSessionName    // "cnf.id"
 goauth.DefaultSignInRedirectURL    // "/sign-in"
+goauth.DefaultTablePrefix          // "goauth_"
 goauth.DefaultUserTableName        // "users"
 goauth.DefaultSessionTableName     // "sessions"
 goauth.DefaultBasePath             // "/api/authorization"

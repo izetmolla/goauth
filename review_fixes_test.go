@@ -310,3 +310,39 @@ func TestAuthorizationParamsKeepMultipleValues(t *testing.T) {
 		t.Fatalf("query = %v", q)
 	}
 }
+
+// goauth-owned tables get the prefix; explicit names and per-instance
+// prefixes win over DefaultTablePrefix.
+func TestTablePrefix(t *testing.T) {
+	on := Config{
+		Verification: VerificationOptions{
+			OTPSignIn: OTPSignInOptions{Enabled: true},
+			FindUser:  func(context.Context, string) (*OAuthUser, error) { return nil, nil },
+			Send:      func(context.Context, *VerificationMessage) error { return nil },
+		},
+		MFA: MFAOptions{TOTP: TOTPOptions{Enabled: true}},
+	}
+	tables := func(cfg Config) (string, string) {
+		a := newHardeningAuth(t, cfg)
+		return a.verify.table, a.totp.table
+	}
+	if v, m := tables(on); v != "goauth_verification_tokens" || m != "goauth_totp" {
+		t.Errorf("default: %s, %s", v, m)
+	}
+	custom := on
+	custom.TablePrefix = "auth_"
+	if v, m := tables(custom); v != "auth_verification_tokens" || m != "auth_totp" {
+		t.Errorf("Config.TablePrefix: %s, %s", v, m)
+	}
+	explicit := on
+	explicit.Verification.TableName = "verification_tokens"
+	if v, _ := tables(explicit); v != "verification_tokens" {
+		t.Errorf("explicit TableName: %s", v)
+	}
+	old := DefaultTablePrefix
+	t.Cleanup(func() { DefaultTablePrefix = old })
+	DefaultTablePrefix = ""
+	if v, m := tables(on); v != "verification_tokens" || m != "totp" {
+		t.Errorf("empty DefaultTablePrefix: %s, %s", v, m)
+	}
+}

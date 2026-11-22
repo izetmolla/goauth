@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.8.0
+
+### Changed
+
+- **Tables goauth owns are prefixed.** `DefaultTablePrefix` (`"goauth_"`) and the new `Config.TablePrefix` prefix the default table names, so the verification table is now `goauth_verification_tokens` (was `verification_tokens`). The TOTP table keeps its name, `goauth_totp`. Change the prefix in your package's `init` function or per instance; an explicit `Verification.TableName` or `MFA.TOTP.TableName` is still used as is.
+
+### Upgrading
+
+If you use verification codes (password reset, email confirmation or one-time-code sign-in), either rename the table:
+
+```sql
+ALTER TABLE verification_tokens RENAME TO goauth_verification_tokens;
+```
+
+or keep the old name with `Verification.TableName: "verification_tokens"`.
+
 ## v1.7.0
 
 ### Security

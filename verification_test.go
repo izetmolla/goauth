@@ -81,11 +81,11 @@ func TestVerificationOptionsValidation(t *testing.T) {
 		"bad template":       {EmailTemplates: fstest.MapFS{"otp_signin.html": {Data: []byte(`{{define "subject"}}x`)}}},
 	}
 	for name, o := range bad {
-		if _, err := newVerification(o, "secret"); err == nil {
+		if _, err := newVerification(o, "secret", DefaultTablePrefix); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	v, err := newVerification(VerificationOptions{OTPSignIn: OTPSignInOptions{Enabled: true}, FindUser: find, Send: send}, "secret")
+	v, err := newVerification(VerificationOptions{OTPSignIn: OTPSignInOptions{Enabled: true}, FindUser: find, Send: send}, "secret", DefaultTablePrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestEmailTemplatesRenderAndCanBeOverridden(t *testing.T) {
 	}
 
 	override := fstest.MapFS{"otp_signin.html": {Data: []byte(`{{define "subject"}}Code {{.Code}}{{end}}{{define "preheader"}}{{end}}{{define "text"}}Use {{.Code}}{{end}}{{define "html"}}<b>{{.Code}}</b>{{end}}`)}}
-	v, err := newVerification(VerificationOptions{EmailTemplates: override}, "s")
+	v, err := newVerification(VerificationOptions{EmailTemplates: override}, "s", DefaultTablePrefix)
 	if err != nil {
 		t.Fatal(err)
 	}

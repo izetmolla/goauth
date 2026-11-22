@@ -102,7 +102,7 @@ func seedUserSession(t *testing.T, a *Authorization, userID string) (sessionID s
 }
 
 func TestTOTPEncryptRoundTrip(t *testing.T) {
-	m, err := newTOTP(TOTPOptions{Enabled: true, Issuer: "App"}, "secret-secret-secret-secret-secret", "App")
+	m, err := newTOTP(TOTPOptions{Enabled: true, Issuer: "App"}, "secret-secret-secret-secret-secret", "App", DefaultTablePrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestMaybeChallengeMFAForCompleteSignIn(t *testing.T) {
 	if err := a.db.Create(&mfaTestUser{ID: "user-oauth", Roles: JSONBArray{}}).Error; err != nil {
 		t.Fatal(err)
 	}
-	m, err := newTOTP(TOTPOptions{Enabled: true, Issuer: "App"}, a.JWTSecret, "App")
+	m, err := newTOTP(TOTPOptions{Enabled: true, Issuer: "App"}, a.JWTSecret, "App", DefaultTablePrefix)
 	if err != nil {
 		t.Fatal(err)
 	}

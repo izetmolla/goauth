@@ -25,11 +25,11 @@ if err := auth.MigrateVerificationTokens(ctx); err != nil {
 }
 ```
 
-Or create it yourself. The table name defaults to `verification_tokens` (see `Verification.TableName`):
+Or create it yourself. The table name defaults to `goauth_verification_tokens`: the [table prefix](./configuration.md#table-names) followed by `verification_tokens`. Set `Verification.TableName` to use another name as is.
 
 ```sql
 -- PostgreSQL
-CREATE TABLE verification_tokens (
+CREATE TABLE goauth_verification_tokens (
     id          varchar(36) PRIMARY KEY,
     kind        varchar(32)  NOT NULL,
     identifier  varchar(255) NOT NULL,
@@ -41,8 +41,8 @@ CREATE TABLE verification_tokens (
     consumed_at timestamptz,
     created_at  timestamptz  NOT NULL
 );
-CREATE INDEX idx_goauth_verification_lookup ON verification_tokens (kind, identifier);
-CREATE INDEX idx_goauth_verification_token  ON verification_tokens (token_hash);
+CREATE INDEX idx_goauth_verification_lookup ON goauth_verification_tokens (kind, identifier);
+CREATE INDEX idx_goauth_verification_token  ON goauth_verification_tokens (token_hash);
 ```
 
 For MySQL use `datetime(3)` instead of `timestamptz`. For SQL Server use `nvarchar` and `datetimeoffset`. For SQLite use `TEXT`, `INTEGER` and `DATETIME`. Times are always written in UTC, and expiry is checked in Go, so no database time functions are used.

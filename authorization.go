@@ -32,7 +32,12 @@ type Config struct {
 
 	UserTableName    string
 	SessionTableName string
-	RedisTTL         time.Duration
+	// TablePrefix is prepended to the names of the tables goauth owns:
+	// {prefix}verification_tokens and {prefix}totp. Empty uses
+	// DefaultTablePrefix ("goauth_"). An explicit Verification.TableName or
+	// MFA.TOTP.TableName is used as is.
+	TablePrefix string
+	RedisTTL    time.Duration
 
 	// Providers is the ordered list of enabled providers. Required.
 	Providers []Provider
@@ -164,11 +169,12 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err := cfg.UI.validate(); err != nil {
 		return nil, err
 	}
-	verify, err := newVerification(cfg.Verification, cfg.JWTSecret)
+	prefix := cmp.Or(cfg.TablePrefix, DefaultTablePrefix)
+	verify, err := newVerification(cfg.Verification, cfg.JWTSecret, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("verification: %w", err)
 	}
-	totp, err := newTOTP(cfg.MFA.TOTP, cfg.JWTSecret, cfg.UI.AppName)
+	totp, err := newTOTP(cfg.MFA.TOTP, cfg.JWTSecret, cfg.UI.AppName, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("mfa: %w", err)
 	}

@@ -13,6 +13,13 @@ const (
 // downstream modules that have to interoperate with this package can
 // override them for tests without forking the package.
 var (
+	// DefaultTablePrefix is prepended to the names of the tables goauth owns
+	// (verification tokens and TOTP factors), keeping them apart from your
+	// own tables. Change it in your package's init function, or per instance
+	// with Config.TablePrefix. Set it to "" for unprefixed names. It does not
+	// apply to the users and sessions tables, which have their own settings.
+	DefaultTablePrefix = "goauth_"
+
 	DefaultUserTableName    = "users"
 	DefaultSessionTableName = "sessions"
 

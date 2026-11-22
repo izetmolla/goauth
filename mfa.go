@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultTOTPTable  = "goauth_totp"
+	totpTableSuffix   = "totp" // follows Config.TablePrefix
 	defaultTOTPIssuer = "App"
 	defaultTOTPDigits = 6
 	defaultTOTPPeriod = 30
@@ -37,7 +37,8 @@ type TOTPOptions struct {
 	Enabled bool
 	// Issuer is shown in authenticator apps. Defaults to UI.AppName, then "App".
 	Issuer string
-	// TableName is the GORM table for TotpFactor rows. Default "goauth_totp".
+	// TableName is the GORM table for TotpFactor rows, used as is. Default
+	// Config.TablePrefix + "totp" ("goauth_totp").
 	TableName string
 	// Digits is the code length (6 or 8). Default 6.
 	Digits int
@@ -60,7 +61,7 @@ type totpMFA struct {
 	limiter *mfaLimiter
 }
 
-func newTOTP(o TOTPOptions, jwtSecret, appName string) (*totpMFA, error) {
+func newTOTP(o TOTPOptions, jwtSecret, appName, tablePrefix string) (*totpMFA, error) {
 	if !o.Enabled {
 		return &totpMFA{enabled: false}, nil
 	}
@@ -93,7 +94,7 @@ func newTOTP(o TOTPOptions, jwtSecret, appName string) (*totpMFA, error) {
 	return &totpMFA{
 		enabled: true,
 		issuer:  cmp.Or(o.Issuer, appName, defaultTOTPIssuer),
-		table:   cmp.Or(o.TableName, defaultTOTPTable),
+		table:   cmp.Or(o.TableName, tablePrefix+totpTableSuffix),
 		digits:  digits,
 		period:  period,
 		skew:    skew,

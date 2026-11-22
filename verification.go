@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"cmp"
 	"context"
 	"crypto/hkdf"
 	"crypto/hmac"
@@ -136,7 +137,8 @@ type VerificationOptions struct {
 	// database, Send). Default: ignored.
 	OnError func(ctx context.Context, kind VerificationKind, email string, err error)
 
-	// TableName of the verification table. Default "verification_tokens".
+	// TableName of the verification table, used as is. Default
+	// Config.TablePrefix + "verification_tokens" ("goauth_verification_tokens").
 	TableName string
 	// EmailTemplates overrides the built-in emails. Provide any of
 	// "password_reset.html", "email_confirmation.html", "otp_signin.html"
@@ -198,7 +200,9 @@ func (v *verification) anyEnabled() bool {
 	return v.reset.enabled || v.confirm.enabled || v.otp.enabled
 }
 
-const defaultVerificationTable = "verification_tokens"
+// verificationTableSuffix follows Config.TablePrefix in the default name of
+// the verification table.
+const verificationTableSuffix = "verification_tokens"
 
 func resolveCode(c CodeOptions, ttl time.Duration, delivery Delivery, name string) (CodeOptions, error) {
 	if c.Length == 0 {
@@ -254,11 +258,8 @@ func validCharset(s string) error {
 	return nil
 }
 
-func newVerification(o VerificationOptions, secret string) (*verification, error) {
-	v := &verification{opts: o, table: o.TableName}
-	if v.table == "" {
-		v.table = defaultVerificationTable
-	}
+func newVerification(o VerificationOptions, secret, tablePrefix string) (*verification, error) {
+	v := &verification{opts: o, table: cmp.Or(o.TableName, tablePrefix+verificationTableSuffix)}
 	var err error
 	v.reset = verifyFeature{kind: KindPasswordReset, enabled: o.PasswordReset.Enabled}
 	if v.reset.code, err = resolveCode(o.PasswordReset.Code, 30*time.Minute, DeliverLink, "PasswordReset"); err != nil {
