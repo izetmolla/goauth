@@ -18,6 +18,8 @@ auth, err := goauth.New(&goauth.Config{
 
 `New` returns an error if `JWTSecret` is empty or `DB` is nil. Every other field falls back to a default.
 
+`New` also rejects configurations that would only fail later: an invalid or non-positive duration, an unknown `SigningMethod`, an `AuthURL` that is not `http(s)://host`, a nil provider, an empty or duplicate provider id, and an OAuth provider without a `Profile` function.
+
 ## All fields
 
 ```go

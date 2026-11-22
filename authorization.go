@@ -12,7 +12,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// ConfigFunc adjusts a Config before New validates it. ConfigFuncs are
+// applied to a copy, so the Config passed to New is never modified.
 type ConfigFunc func(cfg *Config)
+
+// Config configures New. Only JWTSecret and DB are required; other fields
+// fall back to the matching Default* package variable or stay off.
 type Config struct {
 	JWTSecret            string
 	AuthURL              string
@@ -69,6 +74,10 @@ type Config struct {
 	// Off by default.
 	LoginAs LoginAsOptions
 }
+
+// Authorization is the configured authentication service. Create it once
+// with New; it is safe for concurrent use. The With* setters are meant for
+// startup and tests only.
 type Authorization struct {
 	JWTSecret            string
 	AuthURL              string
@@ -141,6 +150,14 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	}
 	method, err := signingMethodFor(cmp.Or(cfg.SigningMethod, DefaultSigningMethodHMAC))
 	if err != nil {
+		return nil, err
+	}
+	if cfg.AuthURL != "" {
+		if _, _, err := parseOriginURL(cfg.AuthURL); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateProviders(cfg.Providers); err != nil {
 		return nil, err
 	}
 
@@ -221,26 +238,55 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	return a, nil
 }
 
+// validateProviders rejects provider lists that would fail at request time:
+// nil entries, empty or duplicate ids, and OAuth providers without Profile.
+func validateProviders(providers []Provider) error {
+	seen := make(map[string]bool, len(providers))
+	for i, p := range providers {
+		if p == nil {
+			return fmt.Errorf("provider %d is nil", i)
+		}
+		id := p.ID()
+		switch {
+		case id == "":
+			return fmt.Errorf("provider %d has an empty id", i)
+		case seen[id]:
+			return fmt.Errorf("duplicate provider id %q", id)
+		}
+		seen[id] = true
+		if op, ok := p.(*OAuthProvider); ok && op.Profile == nil {
+			return fmt.Errorf("provider %q has no Profile function", id)
+		}
+	}
+	return nil
+}
+
+// WithJWTSecret replaces the signing secret. Empty values are ignored.
+// Setters are for startup and tests; they are not synchronized with requests.
 func (a *Authorization) WithJWTSecret(secret string) *Authorization {
-	if secret != "" {
+	if a != nil && secret != "" {
 		a.JWTSecret = secret
 	}
 	return a
 }
 
+// WithAuthURL replaces the public origin. Empty values are ignored.
 func (a *Authorization) WithAuthURL(authURL string) *Authorization {
-	if authURL != "" {
+	if a != nil && authURL != "" {
 		a.AuthURL = authURL
 	}
 	return a
 }
+
+// WithDB replaces the database. Nil values are ignored.
 func (a *Authorization) WithDB(db *gorm.DB) *Authorization {
-	if db != nil {
+	if a != nil && db != nil {
 		a.db = db
 	}
 	return a
 }
 
+// WithRedis sets the Redis client sessions are copied to. Nil is ignored.
 func (a *Authorization) WithRedis(redis *redis.Client) *Authorization {
 	if a != nil && redis != nil {
 		a.redis = redis
@@ -248,29 +294,35 @@ func (a *Authorization) WithRedis(redis *redis.Client) *Authorization {
 	return a
 }
 
+// WithRedisPrefix replaces the Redis key prefix. Empty values are ignored.
 func (a *Authorization) WithRedisPrefix(redisPrefix string) *Authorization {
-	if redisPrefix != "" {
+	if a != nil && redisPrefix != "" {
 		a.redisPrefix = redisPrefix
 	}
 	return a
 }
 
+// WithRedisTTL replaces the Redis entry lifetime. Non-positive values are
+// ignored.
 func (a *Authorization) WithRedisTTL(redisTTL time.Duration) *Authorization {
-	if redisTTL != 0 {
+	if a != nil && redisTTL > 0 {
 		a.redisTTL = redisTTL
 	}
 	return a
 }
 
+// WithCookieSessionName replaces the session cookie name. Empty values are
+// ignored.
 func (a *Authorization) WithCookieSessionName(cookieSessionName string) *Authorization {
-	if cookieSessionName != "" {
+	if a != nil && cookieSessionName != "" {
 		a.cookieSessionName = cookieSessionName
 	}
 	return a
 }
 
+// WithResolveUser replaces Config.ResolveUser. Nil is ignored.
 func (a *Authorization) WithResolveUser(resolveUser func(ctx context.Context, profile Profile) (*User, bool, error)) *Authorization {
-	if resolveUser != nil {
+	if a != nil && resolveUser != nil {
 		a.resolveUser = resolveUser
 	}
 	return a

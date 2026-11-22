@@ -241,8 +241,7 @@ func (a *Authorization) HandleResetPassword(w http.ResponseWriter, r *http.Reque
 	}
 	ctx := r.Context()
 	if err := a.verify.opts.SetPassword(ctx, row.UserID, pw); err != nil {
-		var ce *CredentialsError
-		if errors.As(err, &ce) {
+		if ce, ok := errors.AsType[*CredentialsError](err); ok {
 			a.failure(w, r, pageForgot, http.StatusBadRequest, codeWeakPassword, ce.Message, inputPassword)
 			return
 		}

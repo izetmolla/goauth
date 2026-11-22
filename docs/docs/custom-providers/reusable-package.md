@@ -153,7 +153,7 @@ func str(v any) string {
 
 To add a provider to goauth itself, open a pull request on [GitHub](https://github.com/izetmolla/goauth) with:
 
-1. `providers/<name>/<name>.go` following the package above. Inside goauth, use `common.String(v)` from `providers/internal/common` instead of a local `str` helper.
+1. `providers/<name>/<name>.go` following the package above. Inside goauth, use `common.String(v)` from `internal/common` instead of a local `str` helper, and `common.HTTPClient` for any extra API calls (it has a timeout).
 2. `providers/<name>/README.md` with the provider console setup and an options table (see `providers/azuread/README.md`).
 3. A test using a fake server, as shown in [Testing](./testing.md).
 4. A row in `providers/README.md`.

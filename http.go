@@ -15,6 +15,7 @@ import (
 //	ANY  {base}/provider/{provider}            -> HandleSignIn (OAuth start, credentials sign-in)
 //	ANY  {base}/provider/{provider}/callback   -> HandleCallback
 //	GET  {base}/csrf                           -> GetCSRFToken
+//	POST {base}/signout                        -> HandleSignOut
 //
 // Off by default (Endpoints.EnableRegister, Config.Verification):
 //
@@ -71,6 +72,9 @@ func (a *Authorization) Handler() http.Handler {
 	route("POST "+base+"/provider/{provider}/login/finish", a.HandlePasskey)
 	if !e.DisableCSRF {
 		route("GET "+base+"/csrf", a.GetCSRFToken)
+	}
+	if !e.DisableSignOut {
+		route("POST "+base+"/signout", a.HandleSignOut)
 	}
 	if a.registerProvider() != nil {
 		route("POST "+base+"/provider/{provider}/register", a.HandleRegister)
@@ -142,13 +146,16 @@ func isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), schemeHTTPS)
 }
+
+// schemeHTTPS is the URL scheme that makes cookies Secure.
+const schemeHTTPS = "https"
 
 // requestScheme returns "https" or "http" for the request (see isSecureRequest).
 func requestScheme(r *http.Request) string {
 	if isSecureRequest(r) {
-		return "https"
+		return schemeHTTPS
 	}
 	return "http"
 }

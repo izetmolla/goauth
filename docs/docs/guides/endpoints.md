@@ -19,6 +19,7 @@ description: The routes served by auth.Handler(), their parameters and responses
 | `GET`/`POST` | `/api/authorization/mfa/totp/*` | `auth.HandleTOTPStatus`, … | Authenticator MFA (off by default, see [MFA TOTP](./mfa-totp.md)) |
 | `GET`/`POST` | `/api/authorization/login_as?user_id=` | `auth.HandleLoginAs` | Admin login-as (off by default, see [Login as](./login-as.md)) |
 | `GET` | `/api/authorization/csrf` | `auth.GetCSRFToken` | CSRF token for custom forms |
+| `POST` | `/api/authorization/signout` | `auth.HandleSignOut` | Revoke the current session and clear its cookie ([Sign-out](./sign-out.md)) |
 | `GET` | `/api/authorization/signin` (`UI.SignInEndpoint`) | `auth.SignInPage` | Built-in sign-in page, off by default ([details](./sign-in-page.md)) |
 | `GET` | `/api/authorization/assets/{file}` | | The page's CSS and JS |
 

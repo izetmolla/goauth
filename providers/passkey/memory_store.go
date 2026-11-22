@@ -43,6 +43,7 @@ func (s *MemoryStore) SeedUser(u User) {
 	}
 }
 
+// GetUser implements Store.
 func (s *MemoryStore) GetUser(_ context.Context, userID string) (*User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -54,6 +55,7 @@ func (s *MemoryStore) GetUser(_ context.Context, userID string) (*User, error) {
 	return &cp, nil
 }
 
+// GetUserByHandle implements Store.
 func (s *MemoryStore) GetUserByHandle(_ context.Context, handle []byte) (*User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -69,6 +71,7 @@ func (s *MemoryStore) GetUserByHandle(_ context.Context, handle []byte) (*User, 
 	return &cp, nil
 }
 
+// EnsureUserHandle implements Store.
 func (s *MemoryStore) EnsureUserHandle(_ context.Context, userID string, handle []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,6 +87,7 @@ func (s *MemoryStore) EnsureUserHandle(_ context.Context, userID string, handle 
 	return nil
 }
 
+// ListCredentials implements Store.
 func (s *MemoryStore) ListCredentials(_ context.Context, userID string) ([]Credential, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,6 +95,7 @@ func (s *MemoryStore) ListCredentials(_ context.Context, userID string) ([]Crede
 	return out, nil
 }
 
+// SaveCredential implements Store.
 func (s *MemoryStore) SaveCredential(_ context.Context, userID string, cred Credential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -98,6 +103,7 @@ func (s *MemoryStore) SaveCredential(_ context.Context, userID string, cred Cred
 	return nil
 }
 
+// UpdateCredential implements Store.
 func (s *MemoryStore) UpdateCredential(_ context.Context, userID string, cred Credential) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,6 +119,7 @@ func (s *MemoryStore) UpdateCredential(_ context.Context, userID string, cred Cr
 	return nil
 }
 
+// PutChallenge implements Store.
 func (s *MemoryStore) PutChallenge(_ context.Context, id string, data []byte, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,6 +127,7 @@ func (s *MemoryStore) PutChallenge(_ context.Context, id string, data []byte, tt
 	return nil
 }
 
+// TakeChallenge implements Store.
 func (s *MemoryStore) TakeChallenge(_ context.Context, id string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

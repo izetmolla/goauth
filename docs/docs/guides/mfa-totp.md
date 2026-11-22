@@ -130,6 +130,8 @@ X-Auth-Flow: token
 
 Success looks like a normal `sign_in` payload (tokens / session cookie / callback page).
 
+The `mfa.token` is opaque: it is encrypted and authenticated with a key derived from `JWTSecret`, because after an OAuth sign-in it carries the provider's tokens until the second factor is done. It expires after 5 minutes. Each authenticator code is accepted only once (RFC 6238), so a code seen over someone's shoulder cannot be replayed while it is still valid. Like the attempt limit, this is tracked in memory per app instance.
+
 ### Browser / OAuth callback
 
 When the HTML callback receives `code: "MFA_REQUIRED"`:

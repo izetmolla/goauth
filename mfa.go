@@ -56,8 +56,7 @@ type totpMFA struct {
 	period  uint
 	skew    uint
 	encKey  []byte // AES-256 key for secret encryption
-	hashKey []byte // HMAC key for backup-code and challenge hashes
-	signKey string // JWTSecret, for challenge HMAC
+	hashKey []byte // HMAC key for backup-code hashes
 	limiter *mfaLimiter
 }
 
@@ -100,7 +99,6 @@ func newTOTP(o TOTPOptions, jwtSecret, appName string) (*totpMFA, error) {
 		skew:    skew,
 		encKey:  encKey,
 		hashKey: hashKey,
-		signKey: jwtSecret,
 		limiter: newMFALimiter(),
 	}, nil
 }

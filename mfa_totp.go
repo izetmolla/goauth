@@ -115,6 +115,24 @@ func (m *totpMFA) hashBackup(code string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// matchTOTPStep returns the time step (Unix time / Period) whose code equals
+// code, searching Skew steps either side of now.
+func (m *totpMFA) matchTOTPStep(secret, code string, now time.Time) (int64, bool) {
+	code = strings.TrimSpace(code)
+	opts := totp.ValidateOpts{Period: m.period, Digits: otp.Digits(m.digits), Algorithm: otp.AlgorithmSHA1}
+	period := int64(m.period)
+	current := now.Unix() / period
+	for off := -int64(m.skew); off <= int64(m.skew); off++ {
+		step := current + off
+		want, err := totp.GenerateCodeCustom(secret, time.Unix(step*period, 0).UTC(), opts)
+		if err == nil && subtle.ConstantTimeCompare([]byte(want), []byte(code)) == 1 {
+			return step, true
+		}
+	}
+	return 0, false
+}
+
+// validateTOTP reports whether code is valid now (within Skew).
 func (m *totpMFA) validateTOTP(secret, code string) bool {
 	ok, err := totp.ValidateCustom(strings.TrimSpace(code), secret, time.Now().UTC(), totp.ValidateOpts{
 		Period:    m.period,
@@ -156,7 +174,7 @@ func encodeBackupHashes(hashes []string) (string, error) {
 
 func generateBackupCodes(n int) ([]string, error) {
 	codes := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		b := make([]byte, backupCodeBytes)
 		if _, err := rand.Read(b); err != nil {
 			return nil, err
@@ -263,7 +281,12 @@ func (a *Authorization) verifyTOTPOrBackup(ctx context.Context, userID, code str
 	if err != nil {
 		return err
 	}
-	if a.totp.validateTOTP(string(secret), code) {
+	if step, ok := a.totp.matchTOTPStep(string(secret), code, time.Now()); ok {
+		// A code is valid for several periods; accept each step only once
+		// (RFC 6238 section 5.2), so a captured code cannot be replayed.
+		if !a.totp.limiter.useStep(userID, step) {
+			return errMFAInvalid
+		}
 		return nil
 	}
 	ok, err := a.consumeBackupCode(ctx, row, code)

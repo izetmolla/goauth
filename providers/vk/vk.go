@@ -10,15 +10,16 @@ package vk
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
+// ID is the provider id used in goauth routes: {base}/provider/vk.
 const ID = "vk"
 
 // DefaultScopes are requested when Options.Scopes is nil.
@@ -27,7 +28,7 @@ var DefaultScopes = []string{"email"}
 // Overridable in tests.
 var (
 	usersAPIURL = "https://api.vk.com/method/users.get"
-	httpClient  = http.DefaultClient
+	httpClient  = common.HTTPClient
 )
 
 // Options configures the VK provider.
@@ -99,23 +100,25 @@ func DefaultProfile(p goauth.Profile, tokens goauth.TokenSet) (*goauth.OAuthUser
 }
 
 func fetchUserInfo(ctx context.Context, tokens goauth.TokenSet) (goauth.Profile, error) {
-	userID := common.RawString(tokens.Raw, "user_id")
-	endpoint := usersAPIURL + "?fields=photo_100&v=5.131&access_token=" + tokens.AccessToken
-	if userID != "" {
-		endpoint += "&user_ids=" + userID
+	query := url.Values{"fields": {"photo_100"}, "v": {"5.131"}, "access_token": {tokens.AccessToken}}
+	if userID := common.RawString(tokens.Raw, "user_id"); userID != "" {
+		query.Set("user_ids", userID)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usersAPIURL+"?"+query.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("vk userinfo: %w", err)
 	}
 	defer resp.Body.Close()
-	var profile goauth.Profile
-	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
+	profile := goauth.Profile{}
+	if err := common.DecodeJSON(resp, "vk userinfo", &profile); err != nil {
 		return nil, err
+	}
+	if profile == nil { // a body of JSON null
+		profile = goauth.Profile{}
 	}
 	if email := common.RawString(tokens.Raw, "email"); email != "" {
 		profile["email"] = email

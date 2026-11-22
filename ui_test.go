@@ -19,8 +19,8 @@ func uiAuth(t *testing.T, cfg Config) *Authorization {
 	cfg.UI.EnableAllUI = true // pages are off by default
 	if cfg.Providers == nil {
 		cfg.Providers = []Provider{
-			&OAuthProvider{ProviderID: "google", DisplayName: "Google"},
-			&OAuthProvider{ProviderID: "acme", DisplayName: "Acme SSO"},
+			&OAuthProvider{ProviderID: "google", DisplayName: "Google", Profile: testProfile},
+			&OAuthProvider{ProviderID: "acme", DisplayName: "Acme SSO", Profile: testProfile},
 			&CredentialsProvider{
 				ProviderID: "credentials",
 				Authorize: func(context.Context, map[string]string, *http.Request) (*OAuthUser, error) {
@@ -248,4 +248,10 @@ func TestSanitizeRedirectPath(t *testing.T) {
 			t.Errorf("sanitizeRedirectPath(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+// testProfile is a minimal Profile function for providers that tests only list.
+func testProfile(p Profile, _ TokenSet) (*OAuthUser, error) {
+	id, _ := p["sub"].(string)
+	return &OAuthUser{ID: id}, nil
 }

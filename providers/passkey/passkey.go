@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	// ID is the provider id used in goauth routes: {base}/provider/passkey.
 	ID             = "passkey"
 	defaultName    = "Passkey"
 	challengeTTL   = 5 * time.Minute
@@ -129,9 +130,16 @@ type waUser struct {
 	creds       []webauthn.Credential
 }
 
-func (u *waUser) WebAuthnID() []byte                         { return u.handle }
-func (u *waUser) WebAuthnName() string                       { return u.name }
-func (u *waUser) WebAuthnDisplayName() string                { return u.displayName }
+// WebAuthnID implements webauthn.User.
+func (u *waUser) WebAuthnID() []byte { return u.handle }
+
+// WebAuthnName implements webauthn.User.
+func (u *waUser) WebAuthnName() string { return u.name }
+
+// WebAuthnDisplayName implements webauthn.User.
+func (u *waUser) WebAuthnDisplayName() string { return u.displayName }
+
+// WebAuthnCredentials implements webauthn.User.
 func (u *waUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
 func (c *ceremony) loadUser(ctx context.Context, userID string) (*waUser, error) {
@@ -168,6 +176,7 @@ func (c *ceremony) loadUser(ctx context.Context, userID string) (*waUser, error)
 	return &waUser{id: u.ID, name: name, displayName: display, handle: handle, creds: creds}, nil
 }
 
+// BeginRegister implements goauth.PasskeyCeremony.
 func (c *ceremony) BeginRegister(ctx context.Context, userID, name, displayName string) (any, string, error) {
 	user, err := c.loadUser(ctx, userID)
 	if err != nil {
@@ -201,6 +210,7 @@ func (c *ceremony) BeginRegister(ctx context.Context, userID, name, displayName 
 	return creation, id, nil
 }
 
+// FinishRegister implements goauth.PasskeyCeremony.
 func (c *ceremony) FinishRegister(ctx context.Context, userID, challengeID string, body io.Reader) error {
 	session, err := c.takeSession(ctx, challengePrefR+challengeID)
 	if err != nil {
@@ -221,6 +231,7 @@ func (c *ceremony) FinishRegister(ctx context.Context, userID, challengeID strin
 	return c.store.SaveCredential(ctx, userID, fromWACredential(*cred))
 }
 
+// BeginLogin implements goauth.PasskeyCeremony.
 func (c *ceremony) BeginLogin(ctx context.Context) (any, string, error) {
 	assertion, session, err := c.wa.BeginDiscoverableLogin(
 		webauthn.WithUserVerification(protocol.VerificationPreferred),
@@ -235,6 +246,7 @@ func (c *ceremony) BeginLogin(ctx context.Context) (any, string, error) {
 	return assertion, id, nil
 }
 
+// FinishLogin implements goauth.PasskeyCeremony.
 func (c *ceremony) FinishLogin(ctx context.Context, challengeID string, body io.Reader) (*goauth.OAuthUser, error) {
 	session, err := c.takeSession(ctx, challengePrefL+challengeID)
 	if err != nil {
@@ -244,7 +256,7 @@ func (c *ceremony) FinishLogin(ctx context.Context, challengeID string, body io.
 	if err != nil {
 		return nil, err
 	}
-	handler := func(rawID, userHandle []byte) (webauthn.User, error) {
+	handler := func(_, userHandle []byte) (webauthn.User, error) {
 		u, err := c.store.GetUserByHandle(ctx, userHandle)
 		if err != nil {
 			return nil, err

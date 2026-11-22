@@ -47,6 +47,6 @@ POST /api/authorization/provider/credentials
 
 ## Behavior notes
 
-- **CSRF**: browser (cookie) sign-ins must echo the signed double-submit `csrfToken` in the request body. Token-flow clients (header `X-Auth-Flow: token` or `?flow=token`) are exempt, since they are not cookie-based.
+- **CSRF**: browser (cookie) sign-ins must echo the signed double-submit `csrfToken` in the request body. Token-flow clients that send the `X-Auth-Flow: token` header are exempt, since they are not cookie-based. A `?flow=token` query parameter does not skip the check: a cross-site form could add it.
 - **Method**: only `POST` is accepted; other methods get `405`.
 - **Password hashing**: use `goauth.HashPassword` / `goauth.CheckPassword` (PBKDF2-SHA256, 600k iterations, self-describing `$pbkdf2-sha256$...` format) for storage.

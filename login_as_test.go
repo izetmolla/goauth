@@ -93,7 +93,7 @@ func newLoginAsAuth(t *testing.T, db *gorm.DB, enabled bool) *Authorization {
 func TestLoginAsDisabledByDefault(t *testing.T) {
 	a := newLoginAsAuth(t, openLoginAsDB(t), false)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/login_as?user_id=user-2", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/login_as?user_id=user-2", nil)
 	a.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("got %d", rec.Code)
@@ -128,7 +128,7 @@ func TestLoginAsSuccessSetsSessionAndTokens(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/login_as?user_id=user-2", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/login_as?user_id=user-2", nil)
 	req.Header.Set("Accept", "application/json")
 	req.AddCookie(&http.Cookie{Name: a.cookieSessionName, Value: adminSID})
 	a.Handler().ServeHTTP(rec, req)
@@ -200,7 +200,7 @@ func TestLoginAsForbiddenForNonAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/login_as?user_id=user-3", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/login_as?user_id=user-3", nil)
 	req.Header.Set("Accept", "application/json")
 	req.AddCookie(&http.Cookie{Name: a.cookieSessionName, Value: sid})
 	a.Handler().ServeHTTP(rec, req)
@@ -218,7 +218,7 @@ func TestLoginAsTargetNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/login_as?user_id=missing", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/login_as?user_id=missing", nil)
 	req.Header.Set("Accept", "application/json")
 	req.AddCookie(&http.Cookie{Name: a.cookieSessionName, Value: sid})
 	a.Handler().ServeHTTP(rec, req)
@@ -240,7 +240,7 @@ func TestLoginAsSwitchWhileImpersonating(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/login_as?user_id=user-3", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/login_as?user_id=user-3", nil)
 	req.Header.Set("Accept", "application/json")
 	req.AddCookie(&http.Cookie{Name: a.cookieSessionName, Value: sid})
 	a.Handler().ServeHTTP(rec, req)

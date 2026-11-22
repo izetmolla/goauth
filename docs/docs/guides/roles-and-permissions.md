@@ -107,7 +107,7 @@ data, err := auth.GetAuthDataWEB(r, r.Context()) // WEB: data.Roles from the dat
 2. Cookie-based pages see the change on the next request (if Redis is enabled, as soon as the session is read from the database again).
 3. API clients see it after their next token refresh, at most `AccessTokenDuration` later.
 
-To remove access **immediately**, also sign the user out by marking their sessions deleted. See [Sign-out](./sign-out.md#sign-out-everywhere).
+To remove access **immediately**, also sign the user out everywhere with `auth.RevokeUserSessions(ctx, userID)`. See [Sign-out](./sign-out.md#revoking-sessions-from-your-code).
 
 ## Designing roles
 

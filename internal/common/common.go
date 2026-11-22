@@ -1,15 +1,44 @@
-// Package common holds helpers shared by the provider preset subpackages
-// (google, github, apple, oauth, oidc, ...). It is internal: only packages under
-// goauth/providers may import it.
+// Package common holds helpers shared by goauth and its provider
+// subpackages: reading loosely typed JSON profiles, decoding ID tokens and
+// calling provider APIs. It is internal to the goauth module.
 package common
 
 import (
+	"cmp"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// MaxResponseBytes caps how much of a provider response is read, so a
+// misbehaving endpoint cannot exhaust memory.
+const MaxResponseBytes = 1 << 20
+
+// HTTPClient is the client providers use for their own API calls. Unlike
+// http.DefaultClient it has a timeout, so a stalled provider cannot hold a
+// sign-in request open indefinitely. Tests may replace it.
+var HTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+// DecodeJSON decodes a provider response body into v, reading at most
+// MaxResponseBytes. A non-2xx status is returned as an error that includes
+// the start of the body, prefixed with what.
+func DecodeJSON(resp *http.Response, what string, v any) error {
+	body := io.LimitReader(resp.Body, MaxResponseBytes)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(body)
+		return fmt.Errorf("%s: status %d: %s", what, resp.StatusCode, b)
+	}
+	if err := json.NewDecoder(body).Decode(v); err != nil {
+		return fmt.Errorf("%s: decode: %w", what, err)
+	}
+	return nil
+}
 
 // ErrInvalidIDToken is returned when DecodeIDTokenPayload cannot parse a JWT.
 var ErrInvalidIDToken = errors.New("invalid id_token")
@@ -36,12 +65,7 @@ func String(v any) string {
 
 // FirstNonEmpty returns the first non-empty string, or "".
 func FirstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
+	return cmp.Or(values...)
 }
 
 // Values converts a flat string map into url.Values-shaped data for provider
@@ -77,7 +101,7 @@ func NestedString(m map[string]any, path string) string {
 		return ""
 	}
 	cur := any(m)
-	for _, key := range strings.Split(path, ".") {
+	for key := range strings.SplitSeq(path, ".") {
 		obj, ok := cur.(map[string]any)
 		if !ok {
 			return ""

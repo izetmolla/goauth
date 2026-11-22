@@ -87,13 +87,14 @@ func main() {
 | `ANY` | `{base}/provider/{provider}/callback` | `HandleCallback` | OAuth/OIDC callback; validates state/PKCE/nonce, exchanges the code, resolves the user, creates the session, and renders the callback page |
 | `POST` | `{base}/provider/{provider}/register` | `HandleRegister` | Credentials sign-up (`CredentialsProvider.Register`), then signs the user in. **Off by default** (`Endpoints.EnableRegister`) |
 | `GET` | `{base}/csrf` | `GetCSRFToken` | CSRF token for custom credentials forms |
+| `POST` | `{base}/signout` | `HandleSignOut` | Revokes the current session (cookie or refresh token) and clears the cookie. Off with `Endpoints.DisableSignOut` |
 | `GET` | `UI.SignInEndpoint`, `UI.RegisterEndpoint`, `UI.ForgotPasswordEndpoint`, `UI.OTPEndpoint`, `UI.VerifyEndpoint` (defaults `{base}/signin`, `/register`, `/forgot`, `/otp`, `/verify-email`) | `SignInPage`, `RegisterPage`, … | Built-in pages (embedded HTML, CSS, JS). **All off by default**: turn on with `UI.EnableAllUI` or one by one — see [Built-in pages](docs/docs/guides/sign-in-page.md) |
 | `POST` | `{base}/password/*`, `/otp/*`, `/verify-email*` | `HandleForgotPassword`, … | Password reset, one-time-code sign-in and email confirmation — see [Verification](docs/docs/guides/verification.md). **Off by default** |
 | `GET`/`POST` | `{base}/mfa/totp/*` | `HandleTOTPStatus`, … | Authenticator MFA enroll / disable / verify — see [MFA TOTP](docs/docs/guides/mfa-totp.md). **Off by default** |
 | `GET`/`POST` | `{base}/login_as` | `HandleLoginAs` | Admin login-as another user — see [Login as](docs/docs/guides/login-as.md). **Off by default** |
 | `GET` | `{base}/assets/{file}` | — | The page's versioned CSS/JS |
 
-The sign-in APIs are on by default. Sign-up (`Endpoints.EnableRegister`), the verification features (`Config.Verification`) and every HTML page (`UI.EnableAllUI`, or `UI.EnableSignInPage`, `EnableRegisterPage`, `EnableForgotPasswordPage`, `EnableOTPPage`, `EnableVerifyPage`) are off until you enable them. Serve the pages at your own paths with `UI.SignInEndpoint: "/sign-in"` and friends. Switch built-in APIs off with `Config.Endpoints` (`DisableCredentials`, `DisableCSRF`, `DisableProviders`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
+The sign-in APIs are on by default. Sign-up (`Endpoints.EnableRegister`), the verification features (`Config.Verification`) and every HTML page (`UI.EnableAllUI`, or `UI.EnableSignInPage`, `EnableRegisterPage`, `EnableForgotPasswordPage`, `EnableOTPPage`, `EnableVerifyPage`) are off until you enable them. Serve the pages at your own paths with `UI.SignInEndpoint: "/sign-in"` and friends. Switch built-in APIs off with `Config.Endpoints` (`DisableCredentials`, `DisableCSRF`, `DisableProviders`, `DisableSignOut`). Brand the pages and emails with `Config.UI` (`AppName`, `LogoURL`, `AccentColor`, `TermsURL`, `PrivacyURL`, `DefaultRedirect`).
 
 All SQL goes through GORM's builder with portable column types, tested against the PostgreSQL, MySQL, SQL Server and SQLite dialects.
 
@@ -102,7 +103,7 @@ The handlers are also exported individually (all `http.HandlerFunc` compatible) 
 Useful query parameters on the sign-in endpoint:
 
 - `?json=true` (or header `X-Auth-Return-Redirect: 1` / `Accept: application/json`) — return the authorization URL as JSON instead of a 302 redirect
-- `?flow=token` (or header `X-Auth-Flow: token`) — token flow for mobile/API clients. For credentials sign-in only the header skips the CSRF check
+- header `X-Auth-Flow: token` — token flow for mobile/API clients: JSON responses, no session cookie, and no CSRF check (a cross-site form cannot set a header, so a query parameter never skips it)
 - `?connect=1&resource_id=<uuid>` — provider **connect** flow: link the OAuth account/scopes to the **signed-in** user (requires the WEB session cookie, otherwise `401`); on completion the `Config.OnProviderConnect` callback runs with that user
 
 ## Middlewares
@@ -176,6 +177,7 @@ cookies := goauth.CrossSubdomainCookies(".example.com")
 
 - `auth.Authorize(opts...)` creates a session row and signs an access/refresh pair. The OAuth callback does this automatically; call it yourself for custom flows (e.g. after an LDAP login).
 - `auth.CheckSession(w, r)` validates a refresh token, refreshes the access token with up-to-date roles, and re-sets the session cookie.
+- `auth.SignOut(w, r)`, `auth.RevokeSession(ctx, id)` and `auth.RevokeUserSessions(ctx, userID)` revoke sessions; `UseWEBAuthorization` stores the principal on the request context (`goauth.AuthDataFromContext`).
 - Roles use the `name:perms` grant format, where perms is `r`, `w`, or `rw`. `auth.GetRole(endpointRoles, userRoles)` returns `(hasRole, canRead, canWrite)`.
 - `goauth.HashPassword` / `goauth.CheckPassword` implement PBKDF2-SHA256 (`$pbkdf2-sha256$...`) for credentials storage.
 

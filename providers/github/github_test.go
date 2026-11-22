@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
 func TestNew(t *testing.T) {
@@ -61,7 +61,7 @@ func TestNew(t *testing.T) {
 func TestNew_Overrides(t *testing.T) {
 	t.Parallel()
 	called := false
-	custom := func(p goauth.Profile, _ goauth.TokenSet) (*goauth.OAuthUser, error) {
+	custom := func(_ goauth.Profile, _ goauth.TokenSet) (*goauth.OAuthUser, error) {
 		called = true
 		return &goauth.OAuthUser{ID: "custom"}, nil
 	}
@@ -105,7 +105,7 @@ func TestFetchUserInfo_WithEmailsFallback(t *testing.T) {
 			"id": 42, "login": "octocat", "name": "The Octocat", "avatar_url": "https://gh/a",
 		})
 	})
-	mux.HandleFunc("/user/emails", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/user/emails", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"email": "secondary@gh.com", "primary": false, "verified": true},
 			{"email": "primary@gh.com", "primary": true, "verified": true},
@@ -133,5 +133,25 @@ func TestFetchUserInfo_WithEmailsFallback(t *testing.T) {
 	}
 	if u.ID != "42" || u.Email != "primary@gh.com" || u.NickName != "octocat" {
 		t.Fatalf("got %#v", u)
+	}
+}
+
+// An unverified address may belong to someone else, so it must never become
+// the profile email.
+func TestVerifiedEmailIgnoresUnverified(t *testing.T) {
+	cases := []struct {
+		name   string
+		emails []githubEmail
+		want   string
+	}{
+		{"primary verified", []githubEmail{{"a@x", false, true}, {"p@x", true, true}}, "p@x"},
+		{"primary unverified falls back to verified", []githubEmail{{"p@x", true, false}, {"v@x", false, true}}, "v@x"},
+		{"none verified", []githubEmail{{"p@x", true, false}, {"o@x", false, false}}, ""},
+	}
+	for _, tc := range cases {
+		got, ok := verifiedEmail(tc.emails)
+		if got != tc.want || ok != (tc.want != "") {
+			t.Errorf("%s: got %q %v, want %q", tc.name, got, ok, tc.want)
+		}
 	}
 }

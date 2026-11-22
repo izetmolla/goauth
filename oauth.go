@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/izetmolla/goauth/internal/common"
 )
 
 // maxResponseBytes caps how much of a provider's HTTP response we read, so a
@@ -49,11 +52,9 @@ func authorizationURL(p *OAuthProvider, callbackURL, state, codeVerifier, nonce 
 	if providerUsesCheck(p, CheckNonce) && nonce != "" {
 		params.Set("nonce", nonce)
 	}
-	for k, vs := range p.AuthorizationParams {
-		for _, v := range vs {
-			params.Set(k, v)
-		}
-	}
+	// AuthorizationParams replace standard parameters of the same name and
+	// keep every value of multi-valued ones.
+	maps.Copy(params, p.AuthorizationParams)
 	sep := "?"
 	if strings.Contains(p.AuthorizationURL, "?") {
 		sep = "&"
@@ -128,12 +129,21 @@ func parseTokenResponse(body []byte, contentType string) (*TokenSet, error) {
 		}
 	}
 
-	ts := &TokenSet{Raw: raw}
-	ts.AccessToken = asString(raw["access_token"])
-	ts.TokenType = asString(raw["token_type"])
-	ts.IDToken = asString(raw["id_token"])
-	ts.RefreshToken = asString(raw["refresh_token"])
-	ts.Scope = asString(raw["scope"])
+	// Some providers (GitHub) report errors with status 200 and an error field.
+	if code := common.String(raw["error"]); code != "" {
+		return nil, fmt.Errorf("token exchange: %s: %s", code, common.String(raw["error_description"]))
+	}
+	ts := &TokenSet{
+		Raw:          raw,
+		AccessToken:  common.String(raw["access_token"]),
+		TokenType:    common.String(raw["token_type"]),
+		IDToken:      common.String(raw["id_token"]),
+		RefreshToken: common.String(raw["refresh_token"]),
+		Scope:        common.String(raw["scope"]),
+	}
+	if ts.AccessToken == "" {
+		return nil, errors.New("token exchange: response has no access_token")
+	}
 	// JSON bodies decode numbers as float64; form-encoded bodies yield strings.
 	switch v := raw["expires_in"].(type) {
 	case float64:

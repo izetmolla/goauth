@@ -1,73 +1,57 @@
 ---
 title: Sign-out
-description: End a session, clear the cookie and Redis cache, and sign a user out on every device.
+description: Sign users out with the built-in endpoint, revoke sessions from your code, and sign a user out on every device.
 ---
 
 # Sign-out
 
-A session stays valid until its row is marked `is_deleted = true` or it expires. Signing out means:
-
-1. Mark the session row deleted. This stops the refresh token and the session cookie.
-2. Remove the cached copy from Redis, if you use it.
-3. Expire the session cookie in the browser.
-4. Drop the tokens on the client.
+A session stays valid until it is revoked or it expires. Revoking a session marks its row `is_deleted = true`, which stops its refresh token and session cookie on the next request, and removes its Redis copy if you use Redis.
 
 Already issued **access tokens** keep working until they expire (`AccessTokenDuration`). That is why they should be short-lived.
 
-## A sign-out handler
+## The sign-out endpoint
 
-```go
-func signOut(auth *goauth.Authorization, db *gorm.DB, rdb *redis.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sessionID := sessionIDFromRequest(auth, r)
-		if sessionID != "" {
-			db.WithContext(r.Context()).Table("sessions").
-				Where("id = ?", sessionID).
-				Update("is_deleted", true)
-			if rdb != nil {
-				rdb.Del(r.Context(), goauth.DefaultRedisPrefix+":"+sessionID)
-			}
-		}
+`auth.Handler()` serves `POST /api/authorization/signout`. It finds the session, revokes it, expires the session cookie and answers `204 No Content`. The session is taken from:
 
-		// Expire the session cookie. Path, Domain and Secure must match how it was set.
-		http.SetCookie(w, &http.Cookie{
-			Name:     goauth.DefaultCookieSessionName,
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-			SameSite: http.SameSiteLaxMode,
-		})
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
+- the **session cookie**, for browsers, or
+- a **refresh token**, for API and mobile clients: `Authorization: Bearer <refresh_token>` or a JSON body `{"refresh_token": "..."}`.
 
-// sessionIDFromRequest finds the session from the cookie (web) or the
-// refresh token (API clients send it as "Authorization: Bearer <refresh>").
-func sessionIDFromRequest(auth *goauth.Authorization, r *http.Request) string {
-	if id := auth.GetSessionID(r); id != "" {
-		return id
-	}
-	raw, err := auth.GetTokenFromHeader(r.Header.Get("Authorization"))
-	if err != nil {
-		return ""
-	}
-	claims, err := auth.ExtractToken(raw)
-	if err != nil {
-		return ""
-	}
-	return claims.SessionID
-}
+A request without a session only clears the cookie and still answers `204`, so signing out twice is harmless. Turn the endpoint off with `Config.Endpoints.DisableSignOut`.
+
+```bash
+# Browser-style: with the session cookie
+curl -X POST -b cookies.txt http://localhost:3000/api/authorization/signout
+
+# API client: with the refresh token
+curl -X POST -H "Authorization: Bearer $REFRESH_TOKEN" \
+  http://localhost:3000/api/authorization/signout
 ```
 
+## Signing out from your own handler
+
+`auth.SignOut(w, r)` does the same work and returns an error instead of writing a response:
+
 ```go
-mux.HandleFunc("POST /api/logout", signOut(auth, db, rdb))
+mux.HandleFunc("POST /account/logout", func(w http.ResponseWriter, r *http.Request) {
+	if err := auth.SignOut(w, r); err != nil {
+		http.Error(w, "could not sign out", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+})
 ```
 
-:::tip
-If you set a custom `RedisPrefix`, `CookieSessionName` or cookie `Domain` (see [Cross-subdomain SSO](./cross-subdomain-sso.md)), use the same values here.
-:::
+## Revoking sessions from your code
+
+```go
+// One session, for example from an "active devices" page.
+err := auth.RevokeSession(ctx, sessionID)
+
+// Every session of a user: after a password change, or when an account is disabled.
+err := auth.RevokeUserSessions(ctx, userID)
+```
+
+Revoking an unknown or already revoked session is not an error. A successful password reset already signs the user out everywhere.
 
 ## Client side
 
@@ -77,7 +61,7 @@ async function signOut() {
   const s = JSON.parse(localStorage.getItem(key) || '{"sessions":[]}');
   const current = s.sessions.find((x) => x.session_id === s.current_session);
 
-  await fetch('/api/logout', {
+  await fetch('/api/authorization/signout', {
     method: 'POST',
     credentials: 'include',
     headers: current ? {Authorization: `Bearer ${current.tokens.refresh_token}`} : {},
@@ -89,36 +73,6 @@ async function signOut() {
   location.href = '/sign-in';
 }
 ```
-
-## Sign out everywhere
-
-Mark every session of the user as deleted, for example after a password change or when an account is disabled:
-
-```go
-func signOutEverywhere(ctx context.Context, db *gorm.DB, rdb *redis.Client, userID string) error {
-	var ids []string
-	if err := db.WithContext(ctx).Table("sessions").
-		Where("user_id = ? AND is_deleted = ?", userID, false).
-		Pluck("id", &ids).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Table("sessions").
-		Where("user_id = ?", userID).
-		Update("is_deleted", true).Error; err != nil {
-		return err
-	}
-	if rdb != nil && len(ids) > 0 {
-		keys := make([]string, len(ids))
-		for i, id := range ids {
-			keys[i] = goauth.DefaultRedisPrefix + ":" + id
-		}
-		return rdb.Del(ctx, keys...).Err()
-	}
-	return nil
-}
-```
-
-Even without deleting the Redis keys, goauth re-checks `is_deleted` in the database on every cached lookup, so a signed-out session stops working right away. Deleting the keys just frees memory.
 
 ## Listing active sessions
 
@@ -147,9 +101,15 @@ mux.Handle("GET /api/sessions", auth.UseAPIAuthorization()(http.HandlerFunc(
 mux.Handle("DELETE /api/sessions/{id}", auth.UseAPIAuthorization()(http.HandlerFunc(
 	func(w http.ResponseWriter, r *http.Request) {
 		data, _ := auth.GetAuthDataAPI(r)
-		db.WithContext(r.Context()).Table("sessions").
-			Where("id = ? AND user_id = ?", r.PathValue("id"), data.UserID).
-			Update("is_deleted", true)
+		// Only revoke your own sessions.
+		var owner string
+		db.WithContext(r.Context()).Table("sessions").Select("user_id").
+			Where("id = ?", r.PathValue("id")).Scan(&owner)
+		if owner != data.UserID {
+			http.NotFound(w, r)
+			return
+		}
+		_ = auth.RevokeSession(r.Context(), r.PathValue("id"))
 		w.WriteHeader(http.StatusNoContent)
 	})))
 ```

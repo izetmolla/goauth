@@ -60,7 +60,8 @@ func (a *Authorization) UseAPIAuthorization(opts ...AuthConfigOptions) Middlewar
 // UseWEBAuthorization returns a net/http middleware that protects WEB
 // routes with a session cookie. Missing or invalid cookies are
 // redirected to the sign-in URL (preserving the original request URL
-// in `redirectUrl`).
+// in `redirectUrl`). On success the principal is stored on the request
+// context, so GetAuthDataWEB and AuthDataFromContext need no second lookup.
 func (a *Authorization) UseWEBAuthorization(opts ...AuthConfigOptions) Middleware {
 	return a.protect(opts, func(w http.ResponseWriter, r *http.Request) (*http.Request, func() []string, bool) {
 		session, err := a.GetSession(r.Context(), a.GetSessionID(r))
@@ -72,7 +73,8 @@ func (a *Authorization) UseWEBAuthorization(opts ...AuthConfigOptions) Middlewar
 			writeAPIError(w, http.StatusInternalServerError, codeServerError, err.Error())
 			return nil, nil, false
 		}
-		return r, func() []string { return FormatRoles(session.User.Roles) }, true
+		data := AuthData{SessionID: session.ID, UserID: session.UserID, Roles: FormatRoles(session.User.Roles)}
+		return r.WithContext(withAuthData(r.Context(), data)), func() []string { return data.Roles }, true
 	})
 }
 
@@ -108,10 +110,17 @@ func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http
 	}
 }
 
-// getAuthRedirectURL builds the sign-in URL with a `redirectUrl` query
-// parameter pointing back at the original request, preserving the
-// browser scheme.
+// getAuthRedirectURL builds the sign-in URL with a redirectUrl query
+// parameter pointing back at the original request. The origin comes from
+// AuthURL when it is set, so the URL is right behind a reverse proxy.
 func (a *Authorization) getAuthRedirectURL(r *http.Request) string {
-	original := requestScheme(r) + "://" + r.Host + r.URL.RequestURI()
-	return a.signInRedirectURL + "?redirectUrl=" + url.QueryEscape(original)
+	origin, _, err := a.origin(r)
+	if err != nil {
+		origin = requestScheme(r) + "://" + r.Host
+	}
+	sep := "?"
+	if strings.Contains(a.signInRedirectURL, "?") {
+		sep = "&"
+	}
+	return a.signInRedirectURL + sep + "redirectUrl=" + url.QueryEscape(origin+r.URL.RequestURI())
 }

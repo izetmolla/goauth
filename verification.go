@@ -19,6 +19,7 @@ import (
 // VerificationKind names what a verification code or link is for.
 type VerificationKind string
 
+// Verification kinds.
 const (
 	KindPasswordReset     VerificationKind = "password_reset"
 	KindEmailConfirmation VerificationKind = "email_confirmation"

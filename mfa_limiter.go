@@ -24,6 +24,15 @@ type mfaLimiter struct {
 	mu    sync.Mutex
 	now   func() time.Time
 	users map[string]*mfaFailures
+	// used holds each user's last accepted TOTP time step, so a code cannot
+	// be used twice. Like the failure counts it is per instance.
+	used map[string]usedStep
+}
+
+// usedStep is the last accepted TOTP step and when it can be forgotten.
+type usedStep struct {
+	step    int64
+	expires time.Time
 }
 
 type mfaFailures struct {
@@ -32,7 +41,7 @@ type mfaFailures struct {
 }
 
 func newMFALimiter() *mfaLimiter {
-	return &mfaLimiter{now: time.Now, users: map[string]*mfaFailures{}}
+	return &mfaLimiter{now: time.Now, users: map[string]*mfaFailures{}, used: map[string]usedStep{}}
 }
 
 // blocked reports whether the user has used up their attempts.
@@ -76,4 +85,25 @@ func (l *mfaLimiter) succeed(userID string) {
 	l.mu.Lock()
 	delete(l.users, userID)
 	l.mu.Unlock()
+}
+
+// useStep records an accepted TOTP step and reports whether it is new: a
+// step at or before the user's last accepted one is a replay. Entries are
+// kept for mfaFailureWindow, longer than any code stays valid.
+func (l *mfaLimiter) useStep(userID string, step int64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	if last, ok := l.used[userID]; ok && now.Before(last.expires) && step <= last.step {
+		return false
+	}
+	l.used[userID] = usedStep{step: step, expires: now.Add(mfaFailureWindow)}
+	if len(l.used) > 1024 {
+		for id, v := range l.used {
+			if !now.Before(v.expires) {
+				delete(l.used, id)
+			}
+		}
+	}
+	return true
 }

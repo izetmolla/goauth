@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"uuid"
 )
 
 // --- Authorize options ----------------------------------------------------
@@ -72,14 +73,14 @@ func (a *Authorization) Authorize(opts ...AuthorizeOptionsFunc) (Tokens, string,
 		return Tokens{}, "", fmt.Errorf("invalid roles JSON payload: %w", err)
 	}
 
-	sessionID, err := a.CreateSession(options)
-	if err != nil {
-		return Tokens{}, "", fmt.Errorf("create session: %w", err)
-	}
-
+	// Sign before inserting, so a signing failure leaves no orphan session.
+	sessionID := uuid.NewV4().String()
 	accessToken, refreshToken, err := a.SignTokenPair(options, sessionID)
 	if err != nil {
 		return Tokens{}, "", err
+	}
+	if err := a.createSession(options, sessionID); err != nil {
+		return Tokens{}, "", fmt.Errorf("create session: %w", err)
 	}
 
 	return Tokens{AccessToken: accessToken, RefreshToken: refreshToken}, sessionID, nil

@@ -33,6 +33,8 @@ type EndpointOptions struct {
 	// DisableCSRF removes GET {base}/csrf. The built-in pages still issue
 	// their own CSRF token; this only removes the JSON endpoint used by SPAs.
 	DisableCSRF bool
+	// DisableSignOut removes POST {base}/signout.
+	DisableSignOut bool
 }
 
 // UIOptions brands the built-in sign-in page. Every field is optional.

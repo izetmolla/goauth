@@ -13,9 +13,10 @@ import (
 	"strings"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
+// ID is the provider id used in goauth routes: {base}/provider/apple.
 const ID = "apple"
 
 // DefaultScopes are requested when Options.Scopes is nil.

@@ -224,12 +224,12 @@ Each `OAuthProvider` lists the checks it uses in `Checks`:
 |---|---|---|
 | `goauth.CheckState` | CSRF on the callback | Random value in a cookie, compared in constant time with the `state` parameter |
 | `goauth.CheckPKCE` | Stolen authorization codes | S256 `code_challenge`; the verifier is sent with the code exchange |
-| `goauth.CheckNonce` | ID-token replay | Random `nonce` sent to the provider |
+| `goauth.CheckNonce` | ID-token replay | Random `nonce` sent to the provider; the ID token returned with the tokens must carry the same value |
 
 The built-in Google and Azure AD providers enable all three. Flow cookies expire after 15 minutes and are cleared on every new attempt and every callback.
 
-:::caution[Current limitation]
-goauth sends the `nonce` but does not yet validate the ID token's signature or `nonce` claim. It identifies the user from the userinfo endpoint, called with the fresh access token over TLS. If you depend on ID-token claims, verify the ID token yourself in your provider's `Profile` function.
+:::info[How the nonce is checked]
+When a provider enables `CheckNonce` and returns an ID token, goauth reads the token's `nonce` claim and rejects the callback ("Nonce check failed") unless it matches the value it sent. The ID token arrives directly from the token endpoint over TLS, so goauth does not verify its signature (OpenID Connect Core 3.1.3.7); the user is identified from the userinfo endpoint. If you rely on other ID-token claims, verify the token yourself in your provider's `Profile` function.
 :::
 
 ## Troubleshooting
@@ -240,4 +240,8 @@ goauth sends the `nonce` but does not yet validate the ID token's signature or `
 | "State mismatch" | The browser dropped the state cookie: the callback host differs from the sign-in host, or more than 15 minutes passed |
 | "ResolveUser() function is not set" | `Config.ResolveUser` is nil |
 | "Provider missing AuthorizationURL" | A custom provider has neither `Issuer` nor `AuthorizationURL` |
+| "Missing PKCE verifier" | The PKCE cookie was lost, as with "State mismatch"; start the sign-in again |
+| "Nonce check failed" | The ID token's `nonce` does not match the one sent, or the nonce cookie was lost |
+| "Profile mapping returned no user" | The provider's `Profile` function returned `(nil, nil)` |
+| `goauth.New` fails with "has no Profile function" | A custom `OAuthProvider` has no `Profile` function |
 | Signed in, but `/dashboard` redirects back | The session cookie was set for another host; check `AuthURL` and [cookie domains](./cookies.md) |

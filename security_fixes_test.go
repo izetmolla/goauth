@@ -121,7 +121,7 @@ func TestLoginAsRefusesCrossSiteGet(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/login_as?user_id=user-2", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/login_as?user_id=user-2", nil)
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	req.AddCookie(&http.Cookie{Name: a.cookieSessionName, Value: adminSID})
 	a.Handler().ServeHTTP(rec, req)
@@ -145,7 +145,7 @@ func TestLoginAsPostRequiresCSRFToken(t *testing.T) {
 
 	post := func(body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/login_as", strings.NewReader(body))
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/login_as", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
 		req.AddCookie(&http.Cookie{Name: a.cookieSessionName, Value: adminSID})
@@ -162,7 +162,7 @@ func TestLoginAsPostRequiresCSRFToken(t *testing.T) {
 
 	// Fetch a CSRF token the way an SPA does, then retry.
 	csrfRec := httptest.NewRecorder()
-	h.ServeHTTP(csrfRec, httptest.NewRequest(http.MethodGet, DefaultBasePath+"/csrf", nil))
+	h.ServeHTTP(csrfRec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/csrf", nil))
 	var csrf struct {
 		Token string `json:"csrfToken"`
 	}

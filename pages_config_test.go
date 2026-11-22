@@ -18,7 +18,7 @@ func allFeatures(ui UIOptions) *Config {
 		Endpoints: EndpointOptions{EnableRegister: true},
 		UI:        ui,
 		Providers: []Provider{
-			&OAuthProvider{ProviderID: "google", DisplayName: "Google"},
+			&OAuthProvider{ProviderID: "google", DisplayName: "Google", Profile: testProfile},
 			&CredentialsProvider{
 				ProviderID: "credentials",
 				Authorize: func(context.Context, map[string]string, *http.Request) (*OAuthUser, error) {
@@ -138,7 +138,7 @@ func TestCustomPagePaths(t *testing.T) {
 	}
 	// A failed no-JS sign-in goes back to the custom sign-in path.
 	csrfRec := do(t, h, http.MethodGet, DefaultBasePath+"/csrf", nil, nil)
-	tok := strings.Split(strings.Split(csrfRec.Body.String(), `"csrfToken":"`)[1], `"`)[0]
+	tok, _, _ := strings.Cut(strings.Split(csrfRec.Body.String(), `"csrfToken":"`)[1], `"`)
 	rec := do(t, h, http.MethodPost, DefaultBasePath+"/provider/credentials",
 		url.Values{"csrfToken": {tok}, "email": {"a@b.co"}, "password": {"x"}}, nil, csrfRec.Result().Cookies()...)
 	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/sign-in?") {

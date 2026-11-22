@@ -148,9 +148,9 @@ func TestMFARoutesOffByDefault(t *testing.T) {
 		"/mfa/totp/verify",
 	} {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, DefaultBasePath+path, nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+path, nil)
 		if strings.Contains(path, "enroll") || strings.Contains(path, "disable") || strings.Contains(path, "verify") {
-			req = httptest.NewRequest(http.MethodPost, DefaultBasePath+path, nil)
+			req = httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+path, nil)
 		}
 		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotFound {
@@ -201,7 +201,7 @@ func TestTOTPEnrollConfirmDisableAndChallenge(t *testing.T) {
 
 	// finishSignIn challenges
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/provider/credentials", strings.NewReader(`{}`))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/provider/credentials", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Auth-Flow", "token")
@@ -241,7 +241,7 @@ func TestTOTPEnrollConfirmDisableAndChallenge(t *testing.T) {
 
 	// sign-in no longer challenges
 	rec2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/provider/credentials", strings.NewReader(`{}`))
+	req2 := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/provider/credentials", strings.NewReader(`{}`))
 	req2.Header.Set("Content-Type", "application/json")
 	req2.Header.Set("Accept", "application/json")
 	req2.Header.Set("X-Auth-Flow", "token")
@@ -277,7 +277,7 @@ func TestMaybeChallengeMFAForCompleteSignIn(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.Header.Set("Accept", "application/json")
 	a.completeSignIn(rec, req, &OAuthProvider{ProviderID: "google", DisplayName: "Google"}, &User{ID: "user-oauth"}, &Account{Provider: "google", ProviderAccountID: "1"})
 	if rec.Code != http.StatusUnauthorized {
@@ -293,10 +293,10 @@ func doJSON(t *testing.T, h http.Handler, method, path, body string, cookie *htt
 	rec := httptest.NewRecorder()
 	var req *http.Request
 	if body != "" {
-		req = httptest.NewRequest(method, path, strings.NewReader(body))
+		req = httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 	} else {
-		req = httptest.NewRequest(method, path, nil)
+		req = httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Auth-Flow", "token")

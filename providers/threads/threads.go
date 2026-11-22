@@ -12,9 +12,10 @@ import (
 	"net/url"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
+// ID is the provider id used in goauth routes: {base}/provider/threads.
 const ID = "threads"
 
 // DefaultScopes are requested when Options.Scopes is nil.

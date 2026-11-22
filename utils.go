@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -43,7 +44,7 @@ func validateSessionData(session *SessionData) error {
 
 // buildRedisKey creates a Redis key with the configured prefix.
 func buildRedisKey(prefix, sessionID string) string {
-	return cmp.Or(prefix, "ft_auth") + ":" + sessionID
+	return cmp.Or(prefix, DefaultRedisPrefix) + ":" + sessionID
 }
 
 // serializeSessionData serializes session data to JSON for Redis storage.
@@ -161,31 +162,19 @@ var unitMultipliers = map[string]time.Duration{
 	"y":  365 * 24 * time.Hour, // approximate year
 }
 
-// ParseCustomDuration parses values such as "30s", "15m", "1h", "7d",
-// "4w", "1mo" or "1y". The empty string falls back to `defaultInput`.
-//
-// Kept as a package-level function (and the historical method on
-// TokenManager forwards to it) so callers can reach it without a
-// TokenManager instance.
+// ParseCustomDuration parses a positive integer followed by one unit: s, m,
+// h, d (24h), w (7d), mo (30d) or y (365d), such as "30s", "15m", "7d" or
+// "1y". An empty input falls back to defaultInput. Zero, compound values such
+// as "1h30m", and values too large for a time.Duration are rejected.
 func ParseCustomDuration(input, defaultInput string) (time.Duration, error) {
 	if input == "" {
 		input = defaultInput
 	}
-
-	// Split into the numeric prefix and the unit suffix without
-	// allocating two strings.Builders like the previous implementation.
-	splitAt := len(input)
-	for i, r := range input {
-		if r < '0' || r > '9' {
-			splitAt = i
-			break
-		}
-	}
-	if splitAt == 0 {
+	splitAt := strings.IndexFunc(input, func(r rune) bool { return r < '0' || r > '9' })
+	if splitAt <= 0 {
 		return 0, errors.New("invalid duration: missing number")
 	}
-
-	num, err := strconv.Atoi(input[:splitAt])
+	num, err := strconv.ParseInt(input[:splitAt], 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid number: %w", err)
 	}
@@ -194,20 +183,22 @@ func ParseCustomDuration(input, defaultInput string) (time.Duration, error) {
 	if !ok {
 		return 0, fmt.Errorf("invalid time unit: %q", unit)
 	}
+	if num <= 0 || num > math.MaxInt64/int64(multiplier) {
+		return 0, fmt.Errorf("invalid duration %q: must be positive and fit in a time.Duration", input)
+	}
 	return time.Duration(num) * multiplier, nil
 }
 
+// FormatUser returns the user object sent to the browser after sign-in: the
+// fields of user.User plus "id" and "roles", which always reflect user.ID and
+// user.Roles.
 func FormatUser(user *User) any {
 	if user == nil {
 		return map[string]any{}
 	}
-	formattedUser := map[string]any{
-		"id":    user.ID,
-		"roles": user.Roles,
-	}
-
-	if user.User != nil {
-		maps.Copy(formattedUser, user.User)
-	}
-	return formattedUser
+	out := make(map[string]any, len(user.User)+2)
+	maps.Copy(out, user.User)
+	out["id"] = user.ID
+	out["roles"] = user.Roles
+	return out
 }

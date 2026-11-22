@@ -8,7 +8,7 @@ package google
 
 import (
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
 // New returns a configured Google provider using OpenID Connect discovery.

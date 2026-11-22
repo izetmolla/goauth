@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -52,25 +51,6 @@ func (t TokenSet) ExpiresAt() int64 {
 	return time.Now().Add(time.Duration(t.ExpiresIn) * time.Second).Unix()
 }
 
-// asString coerces common JSON scalar types into a string. OAuth providers are
-// inconsistent about returning ids as numbers vs strings.
-func asString(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case int:
-		return strconv.Itoa(x)
-	case int64:
-		return strconv.FormatInt(x, 10)
-	case bool:
-		return strconv.FormatBool(x)
-	default:
-		return ""
-	}
-}
-
 // JSONBAny is a JSON object stored in a PostgreSQL jsonb column.
 type JSONBAny map[string]any
 
@@ -86,6 +66,7 @@ func (a JSONBAny) Value() (driver.Value, error) {
 	return string(b), err
 }
 
+// Scan implements sql.Scanner for JSON text or bytes.
 func (a *JSONBAny) Scan(value any) error {
 	if value == nil {
 		*a = JSONBAny{}
@@ -125,6 +106,7 @@ func (a JSONBAny) ToString() string {
 // grants ("admin:rw").
 type JSONBArray []any
 
+// GormDataType tells GORM to create the column as JSON.
 func (JSONBArray) GormDataType() string {
 	return "json"
 }
@@ -138,6 +120,7 @@ func (a JSONBArray) Value() (driver.Value, error) {
 	return string(b), err
 }
 
+// Scan implements sql.Scanner for JSON text or bytes.
 func (a *JSONBArray) Scan(value any) error {
 	if value == nil {
 		*a = nil

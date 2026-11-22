@@ -1,22 +1,28 @@
 package goauth
 
 import (
-	"crypto/subtle"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strconv"
-	"strings"
 	"time"
 )
 
-// mfaChallengeSigPrefix separates challenge signatures from the other values
-// signed with JWTSecret (CSRF and connect-intent cookies), so a value signed
-// for one purpose can never be replayed as an MFA challenge.
-const mfaChallengeSigPrefix = "goauth.mfa.v1."
+// mfaChallengeKeyLabel derives the challenge encryption key from JWTSecret.
+// The label keeps it distinct from every other value derived from the
+// secret, so nothing signed or encrypted for another purpose can be replayed
+// as an MFA challenge.
+const mfaChallengeKeyLabel = "goauth.mfa.challenge.v2"
 
 // mfaChallenge binds a pending MFA step to the identity that already passed
-// the first factor. It is signed with JWTSecret and carried as mfa_token.
+// the first factor. It is encrypted and authenticated with AES-GCM and carried
+// as mfa_token. Encryption matters: Account can hold the OAuth provider's
+// access and refresh tokens, which must not be readable by the browser.
 type mfaChallenge struct {
 	UserID   string   `json:"uid"`
 	Method   string   `json:"m"`
@@ -25,45 +31,59 @@ type mfaChallenge struct {
 	Account  *Account `json:"a,omitempty"`
 }
 
-func (c mfaChallenge) payload() (string, error) {
-	b, err := json.Marshal(c)
-	if err != nil {
-		return "", err
+// mfaChallengeAEAD returns the AES-256-GCM cipher for challenges.
+func (a *Authorization) mfaChallengeAEAD() (cipher.AEAD, error) {
+	if a == nil || a.JWTSecret == "" {
+		return nil, errors.New("JWTSecret is required")
 	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	mac := hmac.New(sha256.New, []byte(a.JWTSecret))
+	mac.Write([]byte(mfaChallengeKeyLabel))
+	block, err := aes.NewCipher(mac.Sum(nil))
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
 }
 
+// encodeMFAChallenge seals c into an opaque, URL-safe token.
 func (a *Authorization) encodeMFAChallenge(c mfaChallenge) (string, error) {
-	if a == nil || a.JWTSecret == "" {
-		return "", errors.New("JWTSecret is required")
-	}
 	if c.UserID == "" {
 		return "", errors.New("user id required")
 	}
 	if c.Exp == 0 {
 		c.Exp = time.Now().UTC().Add(mfaChallengeTTL).Unix()
 	}
-	p, err := c.payload()
+	aead, err := a.mfaChallengeAEAD()
 	if err != nil {
 		return "", err
 	}
-	return p + "." + signValue(mfaChallengeSigPrefix+p, a.JWTSecret), nil
+	plain, err := json.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	_, _ = rand.Read(nonce) // never fails since Go 1.24
+	return base64.RawURLEncoding.EncodeToString(aead.Seal(nonce, nonce, plain, nil)), nil
 }
 
+// decodeMFAChallenge opens a token made by encodeMFAChallenge. Tampered,
+// foreign and expired tokens all yield errMFAInvalid.
 func (a *Authorization) decodeMFAChallenge(token string) (mfaChallenge, error) {
-	p, sig, ok := strings.Cut(token, ".")
-	if !ok || p == "" || sig == "" {
+	aead, err := a.mfaChallengeAEAD()
+	if err != nil {
 		return mfaChallenge{}, errMFAInvalid
 	}
-	if subtle.ConstantTimeCompare([]byte(sig), []byte(signValue(mfaChallengeSigPrefix+p, a.JWTSecret))) != 1 {
+	blob, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(blob) < aead.NonceSize() {
 		return mfaChallenge{}, errMFAInvalid
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(p)
+	ns := aead.NonceSize()
+	plain, err := aead.Open(nil, blob[:ns], blob[ns:], nil)
 	if err != nil {
 		return mfaChallenge{}, errMFAInvalid
 	}
 	var c mfaChallenge
-	if err := json.Unmarshal(raw, &c); err != nil || c.UserID == "" {
+	if err := json.Unmarshal(plain, &c); err != nil || c.UserID == "" {
 		return mfaChallenge{}, errMFAInvalid
 	}
 	if time.Now().UTC().Unix() > c.Exp {

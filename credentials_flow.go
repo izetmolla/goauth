@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"maps"
 	"mime"
 	"net/http"
 	"net/url"
@@ -326,9 +327,7 @@ func (a *Authorization) stepResponse(w http.ResponseWriter, r *http.Request, pag
 		if vid != "" {
 			body[fieldVID] = vid
 		}
-		for k, v := range extra {
-			body[k] = v
-		}
+		maps.Copy(body, extra)
 		writeJSON(w, http.StatusOK, body)
 		return
 	}

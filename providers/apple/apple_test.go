@@ -3,8 +3,9 @@ package apple
 import (
 	"encoding/base64"
 	"encoding/json"
-	"github.com/izetmolla/goauth"
 	"testing"
+
+	"github.com/izetmolla/goauth"
 )
 
 func TestNew(t *testing.T) {
@@ -54,7 +55,7 @@ func TestNew(t *testing.T) {
 func TestNew_Overrides(t *testing.T) {
 	t.Parallel()
 	called := false
-	custom := func(p goauth.Profile, _ goauth.TokenSet) (*goauth.OAuthUser, error) {
+	custom := func(_ goauth.Profile, _ goauth.TokenSet) (*goauth.OAuthUser, error) {
 		called = true
 		return &goauth.OAuthUser{ID: "custom"}, nil
 	}

@@ -63,7 +63,7 @@ func TestPasskeyLoginBegin(t *testing.T) {
 		beginLoginID:   "login-chal",
 	})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/provider/passkey/login/begin", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/provider/passkey/login/begin", nil)
 	a.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("begin = %d %s", rec.Code, rec.Body.String())
@@ -85,7 +85,7 @@ func TestPasskeyLoginFinish_RejectsBadAssertion(t *testing.T) {
 	a := passkeyAuth(t, stub)
 	rec := httptest.NewRecorder()
 	body := `{"challengeId":"login-chal","credential":{"id":"x"}}`
-	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/provider/passkey/login/finish", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/provider/passkey/login/finish", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	a.Handler().ServeHTTP(rec, req)
 	if !stub.finishCalled {
@@ -99,7 +99,7 @@ func TestPasskeyLoginFinish_RejectsBadAssertion(t *testing.T) {
 func TestPasskeyRegisterRequiresAuth(t *testing.T) {
 	a := passkeyAuth(t, &stubCeremony{})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/provider/passkey/register/begin", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, DefaultBasePath+"/provider/passkey/register/begin", nil)
 	a.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("register begin without auth = %d", rec.Code)
@@ -109,7 +109,7 @@ func TestPasskeyRegisterRequiresAuth(t *testing.T) {
 func TestPasskeyProviderPathHintsCeremony(t *testing.T) {
 	a := passkeyAuth(t, &stubCeremony{})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, DefaultBasePath+"/provider/passkey", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, DefaultBasePath+"/provider/passkey", nil)
 	a.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d", rec.Code)

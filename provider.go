@@ -9,6 +9,8 @@ import (
 // ProviderType enumerates the kinds of providers, mirroring Auth.js.
 type ProviderType string
 
+// Provider types. The sign-in handlers support ProviderOAuth, ProviderOIDC,
+// ProviderCredentials and ProviderPasskey; ProviderEmail is reserved.
 const (
 	ProviderOAuth       ProviderType = "oauth"
 	ProviderOIDC        ProviderType = "oidc"
@@ -20,9 +22,14 @@ const (
 // Check is an OAuth security check performed during the authorization flow.
 type Check string
 
+// Security checks an OAuthProvider can enable in Checks.
 const (
-	CheckPKCE  Check = "pkce"
+	// CheckPKCE sends an S256 code challenge and proves it with the verifier
+	// at the token endpoint (RFC 7636).
+	CheckPKCE Check = "pkce"
+	// CheckState binds the callback to the browser that started the flow.
 	CheckState Check = "state"
+	// CheckNonce sends a random nonce and requires the ID token to echo it.
 	CheckNonce Check = "nonce"
 )
 
@@ -82,8 +89,13 @@ type OAuthProvider struct {
 	AuthorizationStyle string
 }
 
-func (p *OAuthProvider) ID() string   { return p.ProviderID }
+// ID implements Provider.
+func (p *OAuthProvider) ID() string { return p.ProviderID }
+
+// Name implements Provider.
 func (p *OAuthProvider) Name() string { return p.DisplayName }
+
+// Type implements Provider. It returns ProviderOAuth when Kind is empty.
 func (p *OAuthProvider) Type() ProviderType {
 	if p.Kind == "" {
 		return ProviderOAuth
@@ -158,8 +170,13 @@ func (p *CredentialsProvider) registerFields() []CredentialField {
 	return p.signInFields()
 }
 
-func (p *CredentialsProvider) ID() string         { return p.ProviderID }
-func (p *CredentialsProvider) Name() string       { return p.DisplayName }
+// ID implements Provider.
+func (p *CredentialsProvider) ID() string { return p.ProviderID }
+
+// Name implements Provider.
+func (p *CredentialsProvider) Name() string { return p.DisplayName }
+
+// Type implements Provider.
 func (p *CredentialsProvider) Type() ProviderType { return ProviderCredentials }
 
 // findProvider returns the configured provider by id.

@@ -3,7 +3,6 @@ package goauth
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -205,10 +204,4 @@ func (a *Authorization) SignTokenPair(o *AuthorizeOptions, sessionID string) (st
 	}
 
 	return accessToken, refreshToken, nil
-}
-
-// wantsTokens reports whether the response should be tokens (JSON) rather than a
-// session cookie + redirect.
-func (a *Authorization) wantsTokens(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("X-Auth-Flow"), "token") || r.URL.Query().Get("flow") == "token"
 }

@@ -28,6 +28,7 @@ mux.Handle("GET /dashboard", auth.UseWEBAuthorization()(dashboard))
 2. Loads the session row (or the Redis copy) and the user's current `roles`.
 3. Checks that the session is not signed out (`is_deleted`) and not expired.
 4. Applies `WithRoles`, if set.
+5. Stores the signed-in user on the request context, so `auth.GetAuthDataWEB(r, ctx)` and `goauth.AuthDataFromContext(ctx)` return it without another database query.
 
 When the cookie is missing, unknown, signed out or expired, the user is redirected (`307`):
 
@@ -35,7 +36,7 @@ When the cookie is missing, unknown, signed out or expired, the user is redirect
 /sign-in?redirectUrl=https%3A%2F%2Fapp.example.com%2Fdashboard%3Ftab%3Dbilling
 ```
 
-The target is `Config.SignInRedirectURL` (default `/sign-in`). Database errors return `500` JSON instead of redirecting.
+The target is `Config.SignInRedirectURL` (default `/sign-in`), and the original URL is built from `AuthURL` when it is set, so it is correct behind a reverse proxy. Database errors return `500` JSON instead of redirecting.
 
 ## A sign-in page that returns the user
 

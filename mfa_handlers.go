@@ -132,7 +132,7 @@ func (a *Authorization) HandleTOTPEnrollConfirm(w http.ResponseWriter, r *http.R
 	}
 	if !a.totp.validateTOTP(string(secret), code) {
 		a.totp.limiter.fail(userID)
-		writeJSON(w, http.StatusUnauthorized, Map{"code": codeMFAInvalid, "message": "Invalid authenticator code", "field": "code"})
+		writeInvalidTOTP(w)
 		return
 	}
 	a.totp.limiter.succeed(userID)
@@ -185,7 +185,7 @@ func (a *Authorization) HandleTOTPDisable(w http.ResponseWriter, r *http.Request
 		if !writeMFAError(w, err) {
 			return
 		}
-		writeJSON(w, http.StatusUnauthorized, Map{"code": codeMFAInvalid, "message": "Invalid authenticator code", "field": "code"})
+		writeInvalidTOTP(w)
 		return
 	}
 	if err := a.disableTOTP(r.Context(), userID); err != nil {
@@ -223,7 +223,7 @@ func (a *Authorization) HandleTOTPVerify(w http.ResponseWriter, r *http.Request)
 		if !writeMFAError(w, err) {
 			return
 		}
-		writeJSON(w, http.StatusUnauthorized, Map{"code": codeMFAInvalid, "message": "Invalid authenticator code", "field": "code"})
+		writeInvalidTOTP(w)
 		return
 	}
 	a.completeMFASignIn(w, r, ch)
@@ -260,6 +260,11 @@ func (a *Authorization) completeMFASignIn(w http.ResponseWriter, r *http.Request
 		return
 	}
 	a.renderCallbackPage(w, payload)
+}
+
+// writeInvalidTOTP answers a wrong authenticator or backup code.
+func writeInvalidTOTP(w http.ResponseWriter) {
+	writeJSON(w, http.StatusUnauthorized, Map{"code": codeMFAInvalid, "message": "Invalid authenticator code", "field": "code"})
 }
 
 func writeMFATooMany(w http.ResponseWriter) {

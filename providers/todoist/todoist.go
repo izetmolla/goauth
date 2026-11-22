@@ -10,17 +10,16 @@ package todoist
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
+// ID is the provider id used in goauth routes: {base}/provider/todoist.
 const ID = "todoist"
 
 // DefaultScopes are requested when Options.Scopes is nil.
@@ -29,7 +28,7 @@ var DefaultScopes = []string{"data:read"}
 // Overridable in tests.
 var (
 	syncAPIURL = "https://api.todoist.com/sync/v9/sync"
-	httpClient = http.DefaultClient
+	httpClient = common.HTTPClient
 )
 
 // Options configures the Todoist provider.
@@ -89,15 +88,11 @@ func fetchUserInfo(ctx context.Context, tokens goauth.TokenSet) (goauth.Profile,
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("todoist userinfo: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("todoist userinfo: status %d: %s", resp.StatusCode, b)
-	}
 	var raw map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := common.DecodeJSON(resp, "todoist userinfo", &raw); err != nil {
 		return nil, err
 	}
 	user := common.Map(raw["user"])

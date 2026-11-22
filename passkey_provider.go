@@ -30,6 +30,11 @@ type PasskeyProvider struct {
 	Ceremony PasskeyCeremony
 }
 
-func (p *PasskeyProvider) ID() string         { return p.ProviderID }
-func (p *PasskeyProvider) Name() string       { return p.DisplayName }
+// ID implements Provider.
+func (p *PasskeyProvider) ID() string { return p.ProviderID }
+
+// Name implements Provider.
+func (p *PasskeyProvider) Name() string { return p.DisplayName }
+
+// Type implements Provider.
 func (p *PasskeyProvider) Type() ProviderType { return ProviderPasskey }

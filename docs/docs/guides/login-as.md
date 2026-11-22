@@ -167,7 +167,9 @@ if (data.type === 'sign_in') {
 
 ## 8. Security notes
 
-- Restrict `LoginAs.Roles` tightly; treat this like production root access.
+- Restrict `LoginAs.Roles` tightly; treat this like production root access. goauth does not compare the target's roles with the admin's, so an admin can sign in as another admin.
+- `POST` needs the CSRF token unless the request sends the `X-Auth-Flow: token` header; a `?flow=token` query parameter does not skip the check.
+- `GET` is meant for links inside your app. It is refused when the browser reports that the navigation came from another site, including a sibling subdomain (`Sec-Fetch-Site: cross-site` or `same-site`).
 - Prefer HTTPS and `__Host-` / `__Secure-` cookies (see [Cookies](./cookies.md)).
 - Log `logged_by` + target `user_id` in your own audit trail for support actions.
 - Sign-out ends the impersonation session like any other session ([Sign-out](./sign-out.md)); the admin’s previous session is a separate row unless you reuse/expire it yourself.

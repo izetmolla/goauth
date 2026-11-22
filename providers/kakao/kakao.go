@@ -12,9 +12,10 @@ import (
 	"net/url"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
+// ID is the provider id used in goauth routes: {base}/provider/kakao.
 const ID = "kakao"
 
 // Options configures the Kakao provider.

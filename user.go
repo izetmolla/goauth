@@ -12,6 +12,9 @@ func init() {
 	gob.Register(OAuthUser{})
 }
 
+// User is the application user as seen by goauth: its id and role grants.
+// ResolveUser returns it after OAuth sign-in. User.User holds extra fields
+// sent to the browser by the callback page; they are never stored.
 type User struct {
 	ID      string     `json:"id"`
 	Roles   JSONBArray `json:"roles"`
@@ -114,9 +117,13 @@ func (a *Authorization) GetAuthDataAPI(r *http.Request) (AuthData, error) {
 	return data, nil
 }
 
-// GetAuthDataWEB extracts the authenticated principal from a
-// cookie-protected request by loading the matching session row.
+// GetAuthDataWEB returns the principal of a cookie-authenticated request.
+// Behind UseWEBAuthorization it reuses the session the middleware loaded;
+// otherwise it loads the session named by the cookie.
 func (a *Authorization) GetAuthDataWEB(r *http.Request, reqCtx context.Context) (AuthData, error) { //nolint:revive // public API; reordering the context would break callers
+	if data, ok := AuthDataFromContext(r.Context()); ok {
+		return data, nil
+	}
 	session, err := a.GetSession(reqCtx, a.GetSessionID(r))
 	if err != nil {
 		return AuthData{}, err

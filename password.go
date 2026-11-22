@@ -18,6 +18,12 @@ const (
 	passwordIterations   = 600_000
 	passwordHashPrefix   = "$pbkdf2-sha256$"
 	passwordHashSegments = 3
+
+	// Bounds applied when decoding a stored hash, so a corrupt or tampered
+	// hash cannot make CheckPassword run for minutes.
+	passwordMaxIterations = 10_000_000
+	passwordMinKeyBytes   = 16
+	passwordMaxKeyBytes   = 64
 )
 
 // HashPassword returns a PBKDF2-SHA256 hash of password suitable for database
@@ -68,7 +74,7 @@ func decodePasswordHash(hash string) (iterations int, salt, key []byte, err erro
 		return 0, nil, nil, errors.New("goauth: malformed password hash")
 	}
 	iterations, err = strconv.Atoi(parts[0])
-	if err != nil || iterations <= 0 {
+	if err != nil || iterations <= 0 || iterations > passwordMaxIterations {
 		return 0, nil, nil, errors.New("goauth: invalid password hash iterations")
 	}
 	enc := base64.RawURLEncoding
@@ -77,7 +83,7 @@ func decodePasswordHash(hash string) (iterations int, salt, key []byte, err erro
 		return 0, nil, nil, errors.New("goauth: invalid password hash salt")
 	}
 	key, err = enc.DecodeString(parts[2])
-	if err != nil {
+	if err != nil || len(key) < passwordMinKeyBytes || len(key) > passwordMaxKeyBytes {
 		return 0, nil, nil, errors.New("goauth: invalid password hash digest")
 	}
 	return iterations, salt, key, nil

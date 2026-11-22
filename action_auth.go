@@ -121,15 +121,6 @@ func (a *Authorization) startOAuth(w http.ResponseWriter, r *http.Request, p *OA
 	verifier := newCheck(CheckPKCE, jar.pkceCodeVerifier())
 	nonce := newCheck(CheckNonce, jar.nonce())
 
-	if target := a.callbackTarget(r, origin); target != "" && target != origin {
-		setCookie(w, jar.callbackURL(), target)
-	}
-	// Remember a token-flow preference so the callback (a GET from the
-	// provider) can return tokens instead of a session cookie. Not yet read back.
-	if a.wantsTokens(r) {
-		setCookie(w, jar.flow(), "token")
-	}
-
 	target := authorizationURL(p, a.callbackURL(origin, p.ID()), state, verifier, nonce)
 	if target == "" {
 		writeError(w, http.StatusInternalServerError, "Failed to build authorization URL")
@@ -185,7 +176,10 @@ func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p 
 	}
 	verifier := ""
 	if providerUsesCheck(p, CheckPKCE) {
-		verifier = readCookie(r, jar.pkceCodeVerifier().Name)
+		if verifier = readCookie(r, jar.pkceCodeVerifier().Name); verifier == "" {
+			a.renderCallbackError(w, "Missing PKCE verifier; start the sign-in again")
+			return
+		}
 	}
 
 	if err := discover(ctx, p); err != nil {
@@ -197,6 +191,12 @@ func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p 
 		a.renderCallbackError(w, "Token exchange failed: "+err.Error())
 		return
 	}
+	if providerUsesCheck(p, CheckNonce) {
+		if err := checkIDTokenNonce(tokens.IDToken, readCookie(r, jar.nonce().Name)); err != nil {
+			a.renderCallbackError(w, "Nonce check failed: "+err.Error())
+			return
+		}
+	}
 	profile, err := fetchUserInfo(ctx, p, tokens)
 	if err != nil {
 		a.renderCallbackError(w, "Userinfo failed: "+err.Error())
@@ -205,6 +205,10 @@ func (a *Authorization) oauthCallback(w http.ResponseWriter, r *http.Request, p 
 	user, err := p.Profile(profile, *tokens)
 	if err != nil {
 		a.renderCallbackError(w, "Profile mapping failed: "+err.Error())
+		return
+	}
+	if user == nil {
+		a.renderCallbackError(w, "Profile mapping returned no user")
 		return
 	}
 
@@ -293,23 +297,30 @@ func (a *Authorization) completeSignIn(w http.ResponseWriter, r *http.Request, p
 	})
 }
 
+// WithUserID sets the user the session and tokens belong to. Authorize reads
+// this user's current roles from the users table.
 func (a *Authorization) WithUserID(userID string) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		o.userID = userID
 	}
 }
+
+// WithUserRoles sets the token roles used when the user's row cannot be read;
+// roles stored in the users table take precedence.
 func (a *Authorization) WithUserRoles(roles JSONBArray) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		o.roles = roles
 	}
 }
 
+// WithAccount records the provider account and its tokens on the session.
 func (a *Authorization) WithAccount(account *Account) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		o.account = account
 	}
 }
 
+// WithContext sets the context used for database calls. Nil is ignored.
 func (a *Authorization) WithContext(ctx context.Context) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		if ctx != nil {
@@ -318,18 +329,22 @@ func (a *Authorization) WithContext(ctx context.Context) AuthorizeOptionsFunc {
 	}
 }
 
+// WithIPAddress records the client IP on the session.
 func (a *Authorization) WithIPAddress(ipAddress string) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		o.ipAddress = ipAddress
 	}
 }
 
+// WithUserAgent records the client user agent on the session.
 func (a *Authorization) WithUserAgent(userAgent string) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		o.userAgent = userAgent
 	}
 }
 
+// WithMethod records the sign-in method (usually the provider id) on the
+// session. Empty values keep the default, "credentials".
 func (a *Authorization) WithMethod(method string) AuthorizeOptionsFunc {
 	return func(o *AuthorizeOptions) {
 		if method != "" {

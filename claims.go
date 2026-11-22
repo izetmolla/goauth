@@ -108,3 +108,18 @@ func (a *Authorization) GetClaims(r *http.Request) (jwt.MapClaims, error) {
 	}
 	return claims, nil
 }
+
+// authDataContextKey is the private context key for the AuthData stored by
+// UseWEBAuthorization.
+type authDataContextKey struct{}
+
+func withAuthData(ctx context.Context, data AuthData) context.Context {
+	return context.WithValue(ctx, authDataContextKey{}, data)
+}
+
+// AuthDataFromContext returns the principal stored by UseWEBAuthorization,
+// and whether one was stored.
+func AuthDataFromContext(ctx context.Context) (AuthData, bool) {
+	data, ok := ctx.Value(authDataContextKey{}).(AuthData)
+	return data, ok
+}

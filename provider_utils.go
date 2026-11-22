@@ -63,10 +63,10 @@ func parseOriginURL(raw string) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("invalid AuthURL: %w", err)
 	}
-	if u.Host == "" {
-		return "", false, fmt.Errorf("invalid AuthURL: %q", raw)
+	if u.Host == "" || (u.Scheme != "http" && u.Scheme != schemeHTTPS) {
+		return "", false, fmt.Errorf("invalid AuthURL %q: want http(s)://host", raw)
 	}
-	return u.Scheme + "://" + u.Host, u.Scheme == "https", nil
+	return u.Scheme + "://" + u.Host, u.Scheme == schemeHTTPS, nil
 }
 
 // callbackQuery returns OAuth callback parameters from the query string, merging

@@ -10,16 +10,15 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 
 	"github.com/izetmolla/goauth"
-	"github.com/izetmolla/goauth/providers/internal/common"
+	"github.com/izetmolla/goauth/internal/common"
 )
 
+// ID is the provider id used in goauth routes: {base}/provider/github.
 const ID = "github"
 
 // DefaultScopes are requested when Options.Scopes is nil.
@@ -29,7 +28,7 @@ var DefaultScopes = []string{"read:user", "user:email"}
 var (
 	userAPIURL   = "https://api.github.com/user"
 	emailsAPIURL = "https://api.github.com/user/emails"
-	httpClient   = http.DefaultClient
+	httpClient   = common.HTTPClient
 )
 
 // Options configures the GitHub provider.
@@ -80,51 +79,63 @@ func DefaultProfile(p goauth.Profile, _ goauth.TokenSet) (*goauth.OAuthUser, err
 	}, nil
 }
 
+// fetchUserInfo loads the GitHub user. When the profile has no public email,
+// it reads /user/emails and uses the primary address, or else the first one,
+// but only if GitHub reports it as verified: an unverified address could
+// belong to someone else.
 func fetchUserInfo(ctx context.Context, tokens goauth.TokenSet) (goauth.Profile, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userAPIURL, nil)
-	if err != nil {
+	var profile goauth.Profile
+	if err := getJSON(ctx, userAPIURL, tokens.AccessToken, "github userinfo", &profile); err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+	if common.String(profile["email"]) != "" {
+		return profile, nil
+	}
+	var emails []githubEmail
+	// The emails scope is optional; without it the profile simply has no email.
+	if err := getJSON(ctx, emailsAPIURL, tokens.AccessToken, "github emails", &emails); err != nil {
+		return profile, nil //nolint:nilerr // a missing email is not a sign-in failure
+	}
+	if e, ok := verifiedEmail(emails); ok {
+		profile["email"] = e
+		profile["email_verified"] = true
+	}
+	return profile, nil
+}
+
+// githubEmail is one entry of GET /user/emails.
+type githubEmail struct {
+	Email    string `json:"email"`
+	Primary  bool   `json:"primary"`
+	Verified bool   `json:"verified"`
+}
+
+// verifiedEmail returns the primary address if it is verified, otherwise the
+// first verified one.
+func verifiedEmail(emails []githubEmail) (string, bool) {
+	for _, primaryOnly := range []bool{true, false} {
+		for _, e := range emails {
+			if e.Verified && e.Email != "" && (e.Primary || !primaryOnly) {
+				return e.Email, true
+			}
+		}
+	}
+	return "", false
+}
+
+// getJSON performs an authenticated GitHub API GET and decodes the response.
+func getJSON(ctx context.Context, url, accessToken, what string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "goauth")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("%s: %w", what, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("github userinfo: status %d: %s", resp.StatusCode, b)
-	}
-	var profile goauth.Profile
-	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
-		return nil, err
-	}
-	if common.String(profile["email"]) == "" {
-		er, err := http.NewRequestWithContext(ctx, http.MethodGet, emailsAPIURL, nil)
-		if err == nil {
-			er.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
-			er.Header.Set("User-Agent", "goauth")
-			er.Header.Set("Accept", "application/json")
-			if eres, err := httpClient.Do(er); err == nil {
-				defer eres.Body.Close()
-				if eres.StatusCode >= 200 && eres.StatusCode < 300 {
-					var emails []map[string]any
-					if json.NewDecoder(eres.Body).Decode(&emails) == nil {
-						for _, e := range emails {
-							if e["primary"] == true {
-								profile["email"] = e["email"]
-								break
-							}
-						}
-						if common.String(profile["email"]) == "" && len(emails) > 0 {
-							profile["email"] = emails[0]["email"]
-						}
-					}
-				}
-			}
-		}
-	}
-	return profile, nil
+	return common.DecodeJSON(resp, what, v)
 }

@@ -14,19 +14,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// SessionData is the copy of a session written to Redis.
 type SessionData struct {
 	ID     string     `json:"id"`
 	UserID string     `json:"user_id"`
 	Roles  JSONBArray `json:"roles"`
 }
 
+// SessionType records how a session was created.
 type SessionType string
 
+// Session types.
 const (
 	SessionTypeSignIn SessionType = "sign_in"
 	SessionTypeOAuth  SessionType = "oauth"
 )
 
+// Session is one sign-in, stored as a row in the sessions table. It
+// authenticates while IsDeleted is false and ExpiresAt is in the future.
 type Session struct {
 	ID     string      `json:"id" gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
 	UserID string      `json:"user_id" gorm:"type:uuid;default:null"`
@@ -77,6 +82,9 @@ func (a *Authorization) GetSession(ctx context.Context, sessionID string) (*Sess
 	return session, err
 }
 
+// GetSessionFromDB is GetSession without mapping gorm.ErrRecordNotFound to
+// ErrSessionNotFound. The database is always the source of truth; Redis only
+// receives a copy.
 func (a *Authorization) GetSessionFromDB(ctx context.Context, sessionID string) (*Session, error) {
 	if a == nil || a.db == nil {
 		return nil, errors.New("db manager is not initialized")
@@ -237,12 +245,21 @@ func (a *Authorization) CreateSession(o *AuthorizeOptions) (string, error) {
 		return "", errors.New("authorize options are required")
 	}
 
+	id := uuid.NewV4().String()
+	return id, a.createSession(o, id)
+}
+
+// createSession inserts the session row for o under the given id.
+func (a *Authorization) createSession(o *AuthorizeOptions, id string) error {
+	if a.db == nil {
+		return ErrNotInitialized
+	}
 	refreshTokenDuration, err := a.refreshTokenTTL()
 	if err != nil {
-		return "", fmt.Errorf("parse refresh token duration: %w", err)
+		return fmt.Errorf("parse refresh token duration: %w", err)
 	}
-
 	session := Session{
+		ID:        id,
 		UserID:    o.userID,
 		IPAddress: o.ipAddress,
 		UserAgent: o.userAgent,
@@ -256,10 +273,7 @@ func (a *Authorization) CreateSession(o *AuthorizeOptions) (string, error) {
 	if o.account != nil {
 		session.Account = accountToJSONB(o.account)
 	}
-	if err := a.db.WithContext(o.ctx).Table(a.sessionsTable()).Create(&session).Error; err != nil {
-		return "", err
-	}
-	return session.ID, nil
+	return a.db.WithContext(o.ctx).Table(a.sessionsTable()).Create(&session).Error
 }
 
 func (a *Authorization) sessionsTable() string {

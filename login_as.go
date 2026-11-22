@@ -99,8 +99,10 @@ func (a *Authorization) HandleLoginAs(w http.ResponseWriter, r *http.Request) {
 	// be able to trigger it. GET is for links inside the app: refuse it when
 	// the browser says the navigation came from another site. POST needs the
 	// CSRF token like every other form.
-	tokenFlow := isTokenFlow(r) || a.wantsTokens(r)
-	if r.Method == http.MethodGet && strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+	// Only the X-Auth-Flow header skips the CSRF check: a cross-site form
+	// can set a query parameter but not a custom header.
+	tokenFlow := isTokenFlow(r)
+	if r.Method == http.MethodGet && !sameOriginNavigation(r) {
 		a.loginAsFail(w, http.StatusForbidden, codeCSRF, "Open login as from inside the app")
 		return
 	}
@@ -221,6 +223,20 @@ func (a *Authorization) HandleLoginAs(w http.ResponseWriter, r *http.Request) {
 	a.renderCallbackPage(w, payload)
 }
 
+// sameOriginNavigation reports whether a GET may change the session: the
+// browser says it came from this origin, or from no page at all (a typed URL
+// or bookmark). Another site, including a sibling subdomain ("same-site"),
+// is refused. Browsers that send no Sec-Fetch-Site header are allowed.
+func sameOriginNavigation(r *http.Request) bool {
+	switch strings.ToLower(r.Header.Get("Sec-Fetch-Site")) {
+	case "", "same-origin", "none":
+		return true
+	default:
+		return false
+	}
+}
+
+// cmpLoginAsName returns the name shown for u: its name, email or id.
 func cmpLoginAsName(u *LoginAsUser) string {
 	if u == nil {
 		return ""
