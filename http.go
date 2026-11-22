@@ -22,6 +22,7 @@ import (
 //	POST {base}/provider/{provider}/register   -> HandleRegister
 //	POST {base}/password/forgot                -> HandleForgotPassword
 //	POST {base}/password/verify-code           -> HandleResetVerifyCode
+//	POST {base}/password/check                 -> HandleResetCheck
 //	POST {base}/password/reset                 -> HandleResetPassword
 //	POST {base}/otp/send                       -> HandleOTPSend
 //	POST {base}/otp/verify                     -> HandleOTPVerify
@@ -83,6 +84,7 @@ func (a *Authorization) Handler() http.Handler {
 		if v.reset.enabled {
 			route("POST "+base+"/password/forgot", a.HandleForgotPassword)
 			route("POST "+base+"/password/verify-code", a.HandleResetVerifyCode)
+			route("POST "+base+"/password/check", a.HandleResetCheck)
 			route("POST "+base+"/password/reset", a.HandleResetPassword)
 		}
 		if v.otp.enabled {

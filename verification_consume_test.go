@@ -2,7 +2,11 @@ package goauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +113,49 @@ func TestConsumeVerificationIsSingleUse(t *testing.T) {
 	}
 	if _, err := a.consumeVerification(ctx, f, verifyInput{vid: id, token: "once"}); !errors.Is(err, ErrVerificationUsed) {
 		t.Fatalf("reuse: got %v, want used", err)
+	}
+}
+
+func TestHandleResetCheckRejectsUsedToken(t *testing.T) {
+	a := testVerificationAuth(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	id := "77777777-7777-4777-8777-777777777777"
+	tok := "check-tok"
+	consumed := now.Add(-time.Minute)
+	row := VerificationToken{
+		ID: id, Kind: KindPasswordReset, Identifier: "a@x.io", UserID: "u1",
+		TokenHash: a.verify.tokenHash(KindPasswordReset, tok),
+		ExpiresAt: now.Add(time.Hour), ConsumedAt: &consumed, CreatedAt: now.Add(-time.Hour),
+	}
+	if err := a.verificationTable(ctx).Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	h := a.Handler()
+	csrfRec := httptest.NewRecorder()
+	h.ServeHTTP(csrfRec, httptest.NewRequest(http.MethodGet, DefaultBasePath+"/csrf", nil))
+	var csrfBody map[string]string
+	_ = json.NewDecoder(csrfRec.Body).Decode(&csrfBody)
+
+	body := url.Values{
+		"vid": {id}, "token": {tok}, "csrfToken": {csrfBody["csrfToken"]},
+	}.Encode()
+	req := httptest.NewRequest(http.MethodPost, DefaultBasePath+"/password/check", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	for _, c := range csrfRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["code"] != codeCodeUsed {
+		t.Fatalf("code=%v want %s body=%s", out["code"], codeCodeUsed, rec.Body.String())
 	}
 }
 

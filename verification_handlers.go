@@ -211,6 +211,39 @@ func (a *Authorization) HandleResetVerifyCode(w http.ResponseWriter, r *http.Req
 	a.stepResponse(w, r, pageForgot, stepReset, row.ID, "Code confirmed. Choose a new password.", Map{fieldToken: token})
 }
 
+// HandleResetCheck implements POST {base}/password/check: it verifies that
+// a reset link token (or code) is still live without consuming it, so a
+// SPA can refuse to show the new-password form for expired or already-used
+// links. Email scanners that only GET the landing URL never hit this.
+func (a *Authorization) HandleResetCheck(w http.ResponseWriter, r *http.Request) {
+	f, ok := a.featureOn(w, func(v *verification) *verifyFeature { return &v.reset })
+	if !ok {
+		return
+	}
+	in, ok := a.postForm(w, r, pageForgot, []CredentialField{vidField, emailField, codeField, tokenField})
+	if !ok {
+		return
+	}
+	vin := verifyInputFrom(in)
+	row, err := a.findLive(r.Context(), f, vin)
+	if err != nil {
+		a.verificationFailed(w, r, pageForgot, err)
+		return
+	}
+	if err := a.checkSecret(r.Context(), f, row, vin); err != nil {
+		a.verificationFailed(w, r, pageForgot, err)
+		return
+	}
+	left := int(time.Until(row.ExpiresAt.UTC()).Seconds())
+	if left < 0 {
+		left = 0
+	}
+	a.stepResponse(w, r, pageForgot, stepReset, row.ID, "Reset link is still valid.", Map{
+		"expires_in": left,
+		"expires_at": row.ExpiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
 // HandleResetPassword implements POST {base}/password/reset: it checks the
 // token (from the reset link or from HandleResetVerifyCode) or the code,
 // stores the new password with SetPassword and signs the user out
