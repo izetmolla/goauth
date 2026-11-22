@@ -15,7 +15,9 @@ import (
 )
 
 const (
-	loginAttemptTableSuffix = "login_attempts" // follows Config.TablePrefix
+	// loginAttemptTableSuffix follows Config.TablePrefix in the default name
+	// (goauth_login_attempts).
+	loginAttemptTableSuffix = "login_attempts"
 
 	codeLoginLocked = "LOGIN_LOCKED"
 	msgLoginLocked  = "Too many incorrect sign-in attempts. Try again later."
@@ -32,14 +34,14 @@ type LoginProtectionOptions struct {
 	// LockoutFor is how long the identifier stays locked after MaxFailures.
 	// Required when Enabled; must be between 1 minute and 24 hours.
 	LockoutFor time.Duration
-	// TableName of the login attempts table, used as is. Default
+	// TableName is the GORM table for LoginAttempt rows, used as is. Default
 	// Config.TablePrefix + "login_attempts" ("goauth_login_attempts").
 	TableName string
 }
 
-// LoginAttempt is one row of the login_attempts table: the current failed
-// credentials streak for an email/phone (or IP when no identifier is known),
-// plus the last observed client metadata.
+// LoginAttempt is one row of the goauth-owned login attempts table: the
+// current failed credentials streak for an email/phone (or IP when no
+// identifier is known), plus the last observed client metadata.
 type LoginAttempt struct {
 	ID            string     `gorm:"primaryKey;size:36"`
 	Identifier    string     `gorm:"size:255;not null;uniqueIndex:idx_goauth_login_attempt_id"`
@@ -51,6 +53,13 @@ type LoginAttempt struct {
 	LastAttemptAt time.Time  `gorm:"not null"`
 	CreatedAt     time.Time  `gorm:"not null"`
 	UpdatedAt     time.Time  `gorm:"not null"`
+}
+
+// TableName is the default GORM table for LoginAttempt rows
+// (DefaultTablePrefix + "login_attempts"). MigrateLoginAttempts and runtime
+// queries still honor Config.TablePrefix / LoginProtection.TableName.
+func (LoginAttempt) TableName() string {
+	return DefaultTablePrefix + loginAttemptTableSuffix
 }
 
 type loginProtection struct {
@@ -78,7 +87,7 @@ func newLoginProtection(o LoginProtectionOptions, tablePrefix string) (*loginPro
 	}, nil
 }
 
-// MigrateLoginAttempts creates or updates the login_attempts table.
+// MigrateLoginAttempts creates or updates the goauth-owned login attempts table.
 func (a *Authorization) MigrateLoginAttempts(ctx context.Context) error {
 	if a == nil || a.db == nil {
 		return ErrNotInitialized

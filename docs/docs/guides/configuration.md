@@ -41,6 +41,7 @@ auth, err := goauth.New(&goauth.Config{
 	UserTableName:    "users",    // default "users"
 	SessionTableName: "sessions", // default "sessions"
 	TablePrefix:      "goauth_",  // prefix of the tables goauth owns; default goauth.DefaultTablePrefix
+	AutoMigrate:      true,       // create/update sessions + enabled feature tables in New (off by default)
 
 	Redis:       redisClient,      // optional *redis.Client session cache
 	RedisPrefix: "AUTHSESSIONS",   // default "AUTHSESSIONS"
@@ -74,6 +75,7 @@ auth, err := goauth.New(&goauth.Config{
 | `UserTableName` | `users` | Must have `id` and `roles` columns. |
 | `SessionTableName` | `sessions` | See [Database setup](../getting-started/database-setup.md). |
 | `TablePrefix` | `goauth_` | Prefix of the tables goauth owns. See [Table names](#table-names). |
+| `AutoMigrate` | `false` | When true, `New` runs [`Migrate`](#table-names): sessions plus every enabled feature table. Does not touch `users`. |
 | `Redis` | none | See [Sessions and Redis](./sessions-and-redis.md). |
 | `RedisPrefix` | `AUTHSESSIONS` | Keys look like `AUTHSESSIONS:<session id>`. |
 | `RedisTTL` | `30m` | How long a cached session lives in Redis. |
@@ -91,7 +93,7 @@ auth, err := goauth.New(&goauth.Config{
 
 ## Table names
 
-goauth creates and owns these tables (each only when its feature is on). Their names start with a prefix, `goauth_` by default, so they stay apart from your own tables:
+goauth creates and owns these tables (each only when its feature is on). Their names start with a prefix, `goauth_` by default, so they stay apart from your own tables. The `users` and `sessions` tables are not prefixed.
 
 | Table | Default name | Created by | Exact name |
 |---|---|---|---|
@@ -114,6 +116,22 @@ auth, err := goauth.New(&goauth.Config{
 ```
 
 Set `goauth.DefaultTablePrefix = ""` for unprefixed names. An explicit `TableName` is always used as is. The users and sessions tables are not prefixed: set them with `UserTableName` and `SessionTableName`.
+
+### Auto-migrate on startup
+
+```go
+auth, err := goauth.New(&goauth.Config{
+	AutoMigrate: true, // runs auth.Migrate(ctx) inside New
+	// ...
+})
+```
+
+`Migrate` (and therefore `AutoMigrate`) creates or updates:
+
+1. The **sessions** table (always)
+2. Each **enabled** feature table from the list above
+
+It never creates or alters `users`. `auth.HasMigrated()` reports whether those tables already exist (it does not check for missing columns). You can also call `auth.Migrate(ctx)` yourself instead of setting `AutoMigrate`.
 
 ## Duration format
 

@@ -110,3 +110,10 @@ func TestIPAccessDisabled(t *testing.T) {
 		t.Fatalf("enabled=%v err=%v", p.enabled, err)
 	}
 }
+
+func TestIPAccessDefaultTableName(t *testing.T) {
+	a := testIPAccessAuth(t)
+	if a.ipAccess.table != "goauth_ip_access_rules" {
+		t.Fatalf("table=%q want goauth_ip_access_rules", a.ipAccess.table)
+	}
+}

@@ -34,11 +34,17 @@ type Config struct {
 	UserTableName    string
 	SessionTableName string
 	// TablePrefix is prepended to the names of the tables goauth owns:
-	// {prefix}verification_tokens, {prefix}totp, {prefix}login_attempts and
-	// {prefix}ip_access_rules. Empty uses
-	// DefaultTablePrefix ("goauth_"). An explicit Verification.TableName or
-	// MFA.TOTP.TableName is used as is.
+	// {prefix}verification_tokens, {prefix}totp, {prefix}login_attempts,
+	// and {prefix}ip_access_rules. Empty uses DefaultTablePrefix ("goauth_").
+	// An explicit Verification.TableName, MFA.TOTP.TableName,
+	// LoginProtection.TableName, or IPAccess.TableName is used as is.
 	TablePrefix string
+	// AutoMigrate runs Migrate during New when true: creates missing
+	// sessions / feature tables and adds missing columns. Off by default.
+	// Does not touch the users table. Prefer this in development and small
+	// deployments; use Migrate (or your own migration tool) in production
+	// when you want migrations outside of process start.
+	AutoMigrate bool
 	RedisTTL    time.Duration
 
 	// Providers is the ordered list of enabled providers. Required.
@@ -277,6 +283,11 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 			return nil, fmt.Errorf("verification: %s.Code.Delivery sends links, which open the %s page; turn that page on in UIOptions (or EnableAllUI), or use Delivery: goauth.DeliverCode", f.field, f.page)
 		}
 		f.feat.code.Delivery = DeliverCode
+	}
+	if cfg.AutoMigrate {
+		if err := a.Migrate(context.Background()); err != nil {
+			return nil, fmt.Errorf("auto migrate: %w", err)
+		}
 	}
 	return a, nil
 }

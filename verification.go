@@ -177,6 +177,13 @@ type VerificationToken struct {
 	CreatedAt  time.Time `gorm:"not null"`
 }
 
+// TableName is the default GORM table for VerificationToken rows
+// (DefaultTablePrefix + "verification_tokens"). MigrateVerificationTokens
+// and runtime queries still honor Config.TablePrefix / Verification.TableName.
+func (VerificationToken) TableName() string {
+	return DefaultTablePrefix + verificationTableSuffix
+}
+
 // --- Resolved configuration -------------------------------------------------
 
 // verifyFeature is one feature's configuration after defaults.

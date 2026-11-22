@@ -321,28 +321,36 @@ func TestTablePrefix(t *testing.T) {
 			Send:      func(context.Context, *VerificationMessage) error { return nil },
 		},
 		MFA: MFAOptions{TOTP: TOTPOptions{Enabled: true}},
+		LoginProtection: LoginProtectionOptions{
+			Enabled: true, MaxFailures: 5, LockoutFor: 15 * time.Minute,
+		},
+		IPAccess: IPAccessOptions{Enabled: true},
 	}
-	tables := func(cfg Config) (string, string) {
+	tables := func(cfg Config) (verify, totp, login, ip string) {
 		a := newHardeningAuth(t, cfg)
-		return a.verify.table, a.totp.table
+		return a.verify.table, a.totp.table, a.loginProt.table, a.ipAccess.table
 	}
-	if v, m := tables(on); v != "goauth_verification_tokens" || m != "goauth_totp" {
-		t.Errorf("default: %s, %s", v, m)
+	if v, m, l, i := tables(on); v != "goauth_verification_tokens" || m != "goauth_totp" ||
+		l != "goauth_login_attempts" || i != "goauth_ip_access_rules" {
+		t.Errorf("default: %s, %s, %s, %s", v, m, l, i)
 	}
 	custom := on
 	custom.TablePrefix = "auth_"
-	if v, m := tables(custom); v != "auth_verification_tokens" || m != "auth_totp" {
-		t.Errorf("Config.TablePrefix: %s, %s", v, m)
+	if v, m, l, i := tables(custom); v != "auth_verification_tokens" || m != "auth_totp" ||
+		l != "auth_login_attempts" || i != "auth_ip_access_rules" {
+		t.Errorf("Config.TablePrefix: %s, %s, %s, %s", v, m, l, i)
 	}
 	explicit := on
 	explicit.Verification.TableName = "verification_tokens"
-	if v, _ := tables(explicit); v != "verification_tokens" {
-		t.Errorf("explicit TableName: %s", v)
+	explicit.IPAccess.TableName = "ip_access_rules"
+	if v, _, _, i := tables(explicit); v != "verification_tokens" || i != "ip_access_rules" {
+		t.Errorf("explicit TableName: %s, %s", v, i)
 	}
 	old := DefaultTablePrefix
 	t.Cleanup(func() { DefaultTablePrefix = old })
 	DefaultTablePrefix = ""
-	if v, m := tables(on); v != "verification_tokens" || m != "totp" {
-		t.Errorf("empty DefaultTablePrefix: %s, %s", v, m)
+	if v, m, l, i := tables(on); v != "verification_tokens" || m != "totp" ||
+		l != "login_attempts" || i != "ip_access_rules" {
+		t.Errorf("empty DefaultTablePrefix: %s, %s, %s, %s", v, m, l, i)
 	}
 }

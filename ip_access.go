@@ -17,7 +17,9 @@ import (
 )
 
 const (
-	ipAccessTableSuffix  = "ip_access_rules" // follows Config.TablePrefix
+	// ipAccessTableSuffix follows Config.TablePrefix in the default name
+	// (goauth_ip_access_rules).
+	ipAccessTableSuffix  = "ip_access_rules"
 	defaultIPAccessCache = 30 * time.Second
 
 	ipListWhitelist = "whitelist"
@@ -33,8 +35,8 @@ const (
 // restricts access to matching addresses only.
 type IPAccessOptions struct {
 	Enabled bool
-	// TableName of the rules table, used as is. Default Config.TablePrefix +
-	// "ip_access_rules" ("goauth_ip_access_rules").
+	// TableName is the GORM table for IPEntry rows, used as is. Default
+	// Config.TablePrefix + "ip_access_rules" ("goauth_ip_access_rules").
 	TableName string
 	// CacheTTL is how long the enabled rules are kept in memory between
 	// database reads. Changes made through this Authorization apply at once;
@@ -57,6 +59,13 @@ type IPEntry struct {
 	Enabled   bool      `json:"enabled" gorm:"not null;default:true"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
+}
+
+// TableName is the default GORM table for IPEntry rows
+// (DefaultTablePrefix + "ip_access_rules"). MigrateIPAccess and runtime
+// queries still honor Config.TablePrefix / IPAccess.TableName.
+func (IPEntry) TableName() string {
+	return DefaultTablePrefix + ipAccessTableSuffix
 }
 
 // IPEntryUpdate is the mutable fields for UpdateWhitelistIP / UpdateBlacklistIP.

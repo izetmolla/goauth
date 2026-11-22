@@ -20,6 +20,8 @@ Codes and links are stored in a **verification table**, only as keyed hashes. Ea
 The easiest way is to let goauth create it with GORM. The column types are portable across PostgreSQL, MySQL, SQLite and SQL Server:
 
 ```go
+// Or set Config.AutoMigrate: true so New migrates this table when a
+// verification feature is enabled.
 if err := auth.MigrateVerificationTokens(ctx); err != nil {
 	log.Fatal(err)
 }

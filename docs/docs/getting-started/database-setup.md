@@ -53,33 +53,38 @@ A session authenticates only while `is_deleted = false` and `expires_at` is in t
 
 | Feature | How to create | Guide |
 |---|---|---|
+| Sessions + every enabled feature table | `Config.AutoMigrate: true` or `auth.Migrate(ctx)` | [Configuration — table names](../guides/configuration.md#table-names) |
 | Password reset / email confirm / email OTP | `auth.MigrateVerificationTokens(ctx)` | [Verification](../guides/verification.md#1-create-the-verification-table) |
 | Authenticator MFA (TOTP) | `auth.MigrateTOTP(ctx)` | [MFA TOTP](../guides/mfa-totp.md) |
+| Login attempt lockout | `auth.MigrateLoginAttempts(ctx)` | [Configuration](../guides/configuration.md#table-names) |
+| IP access rules | `auth.MigrateIPAccess(ctx)` | [Configuration](../guides/configuration.md#table-names) |
 | Passkey credentials / challenges | your `passkey.Store` schema | [Passkey](../providers/passkey.md) |
+
+With `AutoMigrate: true`, `New` creates the sessions table and any enabled feature tables (verification, TOTP, login attempts, IP access). It never touches `users`.
 
 Session lookups join `sessions.user_id` to `users.id` in a single query, so both columns must have the same type (both `uuid`, both `TEXT`, or both `CHAR(36)`, as in the schemas below).
 
 ## PostgreSQL
 
-PostgreSQL is the primary target: the `Session` model uses `uuid`, `jsonb` and `gen_random_uuid()`. You can let GORM create the sessions table:
+The easiest path is `Config.AutoMigrate: true` (or `auth.Migrate(ctx)`): goauth creates portable `sessions` columns that work on PostgreSQL, MySQL and SQLite. Session ids are generated in Go (`Session.BeforeCreate`).
 
 ```go
-import (
-	"github.com/izetmolla/goauth"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-)
+auth, err := goauth.New(&goauth.Config{
+	DB:          db,
+	AutoMigrate: true,
+	// ...
+})
+```
 
-db, err := gorm.Open(postgres.Open(os.Getenv("DATABASE_URL")), &gorm.Config{})
-if err != nil {
-	log.Fatal(err)
-}
+Or call GORM yourself:
+
+```go
 if err := db.Table("sessions").AutoMigrate(&goauth.Session{}); err != nil {
 	log.Fatal(err)
 }
 ```
 
-Or write the SQL yourself, for example in a migration tool:
+For native PostgreSQL `uuid` / `jsonb` types, write the SQL yourself (for example in a migration tool):
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`Config.AutoMigrate`** runs `auth.Migrate` inside `New`: creates/updates the sessions table and every enabled feature table (verification tokens, TOTP, login attempts, IP access). Off by default. Also adds `Migrate`, `MigrateSessions`, and `HasMigrated`. The users table is never migrated.
+- **GORM `TableName()`** on `VerificationToken`, `TotpFactor`, `LoginAttempt`, and `IPEntry` defaults to the `goauth_`-prefixed names.
+- **`Session` GORM tags are portable** (`size` / `text` instead of PostgreSQL-only `uuid` / `jsonb` / `gen_random_uuid()`), so `MigrateSessions` works on MySQL and SQLite too. Existing databases keep their column types; new AutoMigrate tables get portable types. Prefer your own SQL for native `uuid`/`jsonb`.
+
 ## v1.9.0
 
 ### Added

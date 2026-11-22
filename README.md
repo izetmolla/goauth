@@ -177,6 +177,8 @@ goauth.New(&goauth.Config{
 
 	UserTableName:    "users",           // needs at least: id, roles
 	SessionTableName: "sessions",        // see goauth.Session for the schema
+	TablePrefix:      "goauth_",         // prefix for goauth-owned tables (not users/sessions)
+	AutoMigrate:      true,             // create/update sessions + enabled feature tables in New
 
 	CookieSessionName: "cnf.id",         // WEB session cookie name
 	Cookies:           &goauth.CookieOptions{}, // per-cookie overrides

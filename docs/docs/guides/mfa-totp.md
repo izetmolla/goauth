@@ -32,6 +32,7 @@ auth, err := goauth.New(&goauth.Config{
 if err != nil {
 	log.Fatal(err)
 }
+// Or set Config.AutoMigrate: true so New migrates this table when TOTP is enabled.
 if err := auth.MigrateTOTP(ctx); err != nil {
 	log.Fatal(err)
 }

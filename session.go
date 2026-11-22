@@ -32,20 +32,26 @@ const (
 
 // Session is one sign-in, stored as a row in the sessions table. It
 // authenticates while IsDeleted is false and ExpiresAt is in the future.
+//
+// Column tags are portable across GORM drivers (PostgreSQL, MySQL, SQLite)
+// so MigrateSessions / Config.AutoMigrate work everywhere. Prefer your own
+// SQL when you want native uuid/jsonb types; see the database setup guide.
+// Session ids are always set in BeforeCreate, so no database default is
+// required.
 type Session struct {
-	ID     string      `json:"id" gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	UserID string      `json:"user_id" gorm:"type:uuid;default:null"`
+	ID     string      `json:"id" gorm:"primaryKey;size:36"`
+	UserID string      `json:"user_id" gorm:"size:36"`
 	User   User        `json:"user" gorm:"-"`
-	Type   SessionType `json:"type" gorm:"type:varchar(255);default:'sign_in';"`
+	Type   SessionType `json:"type" gorm:"size:255;default:sign_in"`
 
-	IPAddress string `json:"ip_address" gorm:"size:50;"`
-	UserAgent string `json:"user_agent" gorm:"size:255;"`
-	Method    string `json:"method" gorm:"size:50;default:'credentials';"`
+	IPAddress string `json:"ip_address" gorm:"size:50"`
+	UserAgent string `json:"user_agent" gorm:"size:255"`
+	Method    string `json:"method" gorm:"size:50;default:credentials"`
 
 	// LoggedBy is the admin user id when this session was created via login_as.
 	LoggedBy *string `json:"logged_by,omitempty" gorm:"column:logged_by;size:64"`
 
-	Account JSONBAny `json:"account" gorm:"type:jsonb;default:null"`
+	Account JSONBAny `json:"account" gorm:"type:text"`
 
 	ExpiresAt time.Time `json:"expires_at"`
 	IsDeleted bool      `json:"is_deleted" gorm:"default:false"`

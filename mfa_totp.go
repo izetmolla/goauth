@@ -35,6 +35,13 @@ type TotpFactor struct {
 	UpdatedAt    time.Time `gorm:"not null"`
 }
 
+// TableName is the default GORM table for TotpFactor rows
+// (DefaultTablePrefix + "totp"). MigrateTOTP and runtime queries still honor
+// Config.TablePrefix / MFA.TOTP.TableName.
+func (TotpFactor) TableName() string {
+	return DefaultTablePrefix + totpTableSuffix
+}
+
 // MigrateTOTP creates or updates the TOTP factor table with GORM AutoMigrate.
 // Call it when MFA.TOTP.Enabled is true (or before enabling it in production).
 func (a *Authorization) MigrateTOTP(ctx context.Context) error {
