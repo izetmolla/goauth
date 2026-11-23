@@ -24,6 +24,10 @@ var pageFuncs = template.FuncMap{
 	// fieldError bundles an error message with the id an input's
 	// aria-describedby points at.
 	"fieldError": func(id, message string) fieldErrorView { return fieldErrorView{ID: id, Message: message} },
+	// queryEscape encodes a value for use in a query string (absolute
+	// TrustedRedirectOrigins URLs contain "://" and "?" that must not break
+	// the surrounding link).
+	"queryEscape": url.QueryEscape,
 }
 
 type fieldErrorView struct{ ID, Message string }
@@ -221,10 +225,10 @@ func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page 
 			sameOriginRedirect(origin, cmp.Or(q.Get("redirectUrl"), q.Get("callbackUrl"))),
 			a.defaultRedirect(),
 		),
-		CSRFToken:    a.ensureCSRFToken(w, r, secure),
-		Error:        errorMessages[q.Get("error")],
-		Links:        a.pageLinks(),
-		Actions:      pageActions,
+		CSRFToken: a.ensureCSRFToken(w, r, secure),
+		Error:     errorMessages[q.Get("error")],
+		Links:     a.pageLinks(),
+		Actions:   pageActions,
 	}
 	if len(d.Token) > 128 {
 		d.Token = ""

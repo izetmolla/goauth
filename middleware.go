@@ -42,10 +42,18 @@ func (a *Authorization) parseAccessToken(raw string) (*apiPrincipal, error) {
 // UseAPIAuthorization returns a net/http middleware that protects API routes
 // with a Bearer JWT. On success the validated token is stored on the request
 // context (see GetClaims/JWTFromContext); optional roles are enforced.
+//
+// Pass WithReauthorize() so browser clients that only have the WEB session
+// cookie (cross-subdomain SSO) can bootstrap an access token via the cra
+// header instead of receiving 401.
 func (a *Authorization) UseAPIAuthorization(opts ...AuthConfigOptions) Middleware {
-	return a.protect(opts, func(w http.ResponseWriter, r *http.Request) (*http.Request, func() []string, bool) {
+	cfg := NewAuthConfigOptions(opts...)
+	return a.protectConfig(cfg, func(w http.ResponseWriter, r *http.Request) (*http.Request, func() []string, bool) {
 		p, err := a.parseAccessToken(extractBearerToken(r))
 		if err != nil {
+			if cfg.reauthorize && wantsReauthorize(r) && a.writeReauthorize(w, r, cfg) {
+				return nil, nil, false
+			}
 			writeAPIError(w, http.StatusUnauthorized, codeUnauthorized, err.Error())
 			return nil, nil, false
 		}
@@ -84,7 +92,13 @@ func (a *Authorization) UseWEBAuthorization(opts ...AuthConfigOptions) Middlewar
 // is only called when the route has a role gate, or false once it has
 // written a response.
 func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http.ResponseWriter, *http.Request) (*http.Request, func() []string, bool)) Middleware {
-	cfg := NewAuthConfigOptions(opts...)
+	return a.protectConfig(NewAuthConfigOptions(opts...), authenticate)
+}
+
+func (a *Authorization) protectConfig(cfg *AuthConfig, authenticate func(http.ResponseWriter, *http.Request) (*http.Request, func() []string, bool)) Middleware {
+	if cfg == nil {
+		cfg = defaultAuthConfig()
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if a == nil {
@@ -108,6 +122,79 @@ func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// wantsReauthorize reports whether the client opted into the cra bootstrap
+// handshake (packages/network sends cra=t when localStorage has no tokens).
+func wantsReauthorize(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	v := strings.ToLower(strings.TrimSpace(r.Header.Get(ReauthorizeHandlerIdentifier)))
+	switch v {
+	case "", "0", "f", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+// writeReauthorize mints an access+refresh pair from the WEB session cookie
+// and writes the {reauthorize, session_id, user, tokens} payload expected by
+// packages/network interceptors. Reports false when no usable cookie/session
+// exists so the caller can fall through to a normal 401.
+//
+// Unlike the OAuth callback (which may blank refresh under
+// KeepRefreshTokenServerSide), cra bootstrap always returns both tokens so
+// clients that need Bearer-based refresh have a credential after SSO.
+func (a *Authorization) writeReauthorize(w http.ResponseWriter, r *http.Request, cfg *AuthConfig) bool {
+	if a == nil || r == nil {
+		return false
+	}
+	sessionID := a.GetSessionID(r)
+	if sessionID == "" {
+		return false
+	}
+	session, err := a.GetSession(r.Context(), sessionID)
+	if err != nil || session == nil {
+		return false
+	}
+
+	opts := []AuthorizeOptionsFunc{
+		a.WithUserID(session.UserID),
+		a.WithUserRoles(session.User.Roles),
+		a.WithContext(r.Context()),
+	}
+	if session.LoggedBy != nil && *session.LoggedBy != "" {
+		opts = append(opts, a.WithLoggedBy(&LoggedBy{ID: *session.LoggedBy}))
+	}
+	accessToken, refreshToken, err := a.SignTokenPair(NewAuthorizeOptions(opts...), session.ID)
+	if err != nil || accessToken == "" || refreshToken == "" {
+		return false
+	}
+
+	user := any(FormatUser(&session.User))
+	if cfg != nil && cfg.reauthorizeUser != nil {
+		custom, err := cfg.reauthorizeUser(r.Context(), session)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, codeServerError, err.Error())
+			return true
+		}
+		if custom != nil {
+			user = custom
+		}
+	}
+
+	writeJSON(w, http.StatusOK, Map{
+		"reauthorize": true,
+		"session_id":  session.ID,
+		"user":        user,
+		"tokens": Tokens{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+		},
+	})
+	return true
 }
 
 // getAuthRedirectURL builds the sign-in URL with a redirectUrl query
@@ -154,12 +241,21 @@ func (a *Authorization) absoluteSignInURL() string {
 
 // protectedRequestURL is the URL UseWEBAuthorization sends back in
 // redirectUrl: scheme + host of the request being gated, plus its path.
+// X-Forwarded-Host / X-Forwarded-Proto are honored only when the TCP peer is
+// a Config.TrustedProxies entry, matching trustedClientIP.
 func (a *Authorization) protectedRequestURL(r *http.Request) string {
 	host := r.Host
-	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
-		host = fwd
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = schemeHTTPS
 	}
-	return requestScheme(r) + "://" + host + r.URL.RequestURI()
+	if a != nil && a.peerIsTrustedProxy(r) {
+		if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
+			host = fwd
+		}
+		scheme = requestScheme(r)
+	}
+	return scheme + "://" + host + r.URL.RequestURI()
 }
 
 func isAbsoluteHTTPURL(raw string) bool {

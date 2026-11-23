@@ -253,7 +253,7 @@ func (a *Authorization) completeMFASignIn(w http.ResponseWriter, r *http.Request
 		"user":         Map{"id": ch.UserID},
 		"tokens":       tokens,
 		"session_id":   sessionID,
-		"redirect_url": cmp.Or(ch.Redirect, a.defaultRedirect()),
+		"redirect_url": cmp.Or(a.safeRedirect(ch.Redirect), a.defaultRedirect()),
 	}
 	if tokenFlow || wantsJSON(r) {
 		writeJSON(w, http.StatusOK, payload)

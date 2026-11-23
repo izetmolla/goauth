@@ -48,10 +48,24 @@
     return write(s);
   }
 
-  /* setRedirect remembers where to go after an OAuth round-trip. Only
-   * same-origin paths are stored. */
+  /* setRedirect remembers where to go after an OAuth round-trip. Same-origin
+   * paths and absolute http(s) URLs are stored (the sign-in page only puts
+   * TrustedRedirectOrigins / AuthURL targets into data-redirect). */
   function setRedirect(path) {
-    if (typeof path !== 'string' || path.charAt(0) !== '/' || path.charAt(1) === '/' || path.charAt(1) === '\\') return;
+    if (typeof path !== 'string') return;
+    path = path.trim();
+    if (!path) return;
+    if (path.charAt(0) === '/') {
+      if (path.charAt(1) === '/' || path.charAt(1) === '\\') return;
+    } else {
+      try {
+        var u = new URL(path);
+        if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password) return;
+        path = u.href;
+      } catch (_) {
+        return;
+      }
+    }
     var s = read();
     s.redirectUrl = path;
     write(s);

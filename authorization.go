@@ -97,11 +97,17 @@ type Config struct {
 	IPAccess IPAccessOptions
 
 	// TrustedProxies lists the reverse proxies (IPs or CIDRs, such as
-	// "10.0.0.0/8") whose X-Forwarded-For and X-Real-IP headers are believed
-	// when IPAccess and LoginProtection determine the client address. Empty
-	// means the headers are ignored and the TCP peer address is used, so set
-	// it when goauth runs behind a load balancer.
+	// "10.0.0.0/8") whose CF-Connecting-IP, X-Forwarded-For and X-Real-IP
+	// headers are believed when IPAccess, LoginProtection and session
+	// metadata determine the client address. Empty means the headers are
+	// ignored and the TCP peer address is used, so set it when goauth runs
+	// behind a load balancer.
 	TrustedProxies []string
+	// TrustCloudflare merges Cloudflare's published edge CIDRs into
+	// TrustedProxies and prefers the CF-Connecting-IP header for the client
+	// address. Use this when the app sits behind Cloudflare (orange cloud or
+	// tunnel). You can still add private load-balancer ranges in TrustedProxies.
+	TrustCloudflare bool
 
 	// TrustedRedirectOrigins are extra http(s) origins allowed in post-sign-in
 	// redirectUrl values (in addition to AuthURL / same-origin paths). Use
@@ -228,7 +234,7 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ip_access: %w", err)
 	}
-	trustedProxies, err := parseTrustedProxies(cfg.TrustedProxies)
+	trustedProxies, err := parseTrustedProxies(cfg.TrustedProxies, cfg.TrustCloudflare)
 	if err != nil {
 		return nil, err
 	}
@@ -272,9 +278,9 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		totp:                       totp,
 		loginAs:                    loginAs,
 		loginProt:                  loginProt,
-		ipAccess:               ipAccess,
-		trustedProxies:         trustedProxies,
-		trustedRedirectOrigins: trustedRedirectOrigins,
+		ipAccess:                   ipAccess,
+		trustedProxies:             trustedProxies,
+		trustedRedirectOrigins:     trustedRedirectOrigins,
 	}
 	if err := a.resolvePages(cfg.UI); err != nil {
 		return nil, err

@@ -2,15 +2,23 @@
 
 ## Unreleased
 
-### Changed
-
-- **`UseWEBAuthorization` redirect uses `AuthURL` for the sign-in host.** A relative `SignInRedirectURL` is resolved against `AuthURL`, and `redirectUrl` is the protected request URL (not `AuthURL`). Add `TrustedRedirectOrigins` so post-sign-in can return to other apps.
-
 ### Added
 
+- **`Config.TrustCloudflare`** trusts Cloudflare's published edge CIDRs and prefers `CF-Connecting-IP` (then `True-Client-IP`) for the client address used by IP access, login protection and session metadata. Also exports `CloudflareTrustedProxies`.
 - **`Config.AutoMigrate`** runs `auth.Migrate` inside `New`: creates/updates the sessions table and every enabled feature table (verification tokens, TOTP, login attempts, IP access). Off by default. Also adds `Migrate`, `MigrateSessions`, and `HasMigrated`. The users table is never migrated.
 - **GORM `TableName()`** on `VerificationToken`, `TotpFactor`, `LoginAttempt`, and `IPEntry` defaults to the `goauth_`-prefixed names.
 - **`Session` GORM tags are portable** (`size` / `text` instead of PostgreSQL-only `uuid` / `jsonb` / `gen_random_uuid()`), so `MigrateSessions` works on MySQL and SQLite too. Existing databases keep their column types; new AutoMigrate tables get portable types. Prefer your own SQL for native `uuid`/`jsonb`.
+
+### Fixed
+
+- **OAuth return to trusted absolute `redirectUrl`.** `session.js` `setRedirect` only accepted same-origin paths, so after `TrustedRedirectOrigins` allowed `http://app/…` the OAuth callback still sent users to `/`. Absolute `http(s)` targets are stored now.
+- **`protectedRequestURL` ignored `TrustedProxies`.** `X-Forwarded-Host` / `X-Forwarded-Proto` are only believed when the TCP peer is a configured trusted proxy.
+- **MFA completion re-checks `redirect_url`** with `safeRedirect` before returning it to the browser.
+- **Page links encode `redirectUrl`** (`queryEscape`) so absolute trusted origins with `://` or `?` do not break query strings.
+
+### Changed
+
+- **`UseWEBAuthorization` redirect uses `AuthURL` for the sign-in host.** A relative `SignInRedirectURL` is resolved against `AuthURL`, and `redirectUrl` is the protected request URL (not `AuthURL`). Add `TrustedRedirectOrigins` so post-sign-in can return to other apps.
 
 ## v1.9.0
 

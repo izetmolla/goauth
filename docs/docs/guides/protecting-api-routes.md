@@ -113,6 +113,35 @@ mux.Handle("/api/", protected(api))
 Excluded paths match by **prefix**: `/api/public` also excludes `/api/publications`. End a prefix with `/` (`"/api/public/"`) when you want only that directory.
 :::
 
+## Bootstrap after cross-subdomain SSO (`WithReauthorize`)
+
+Browser clients that sign in on another subdomain (shared `Domain=.example.com` session cookie) often have **no access JWT in `localStorage` yet**. Pass `WithReauthorize()` so `UseAPIAuthorization` answers the client's `cra` probe with a fresh access token instead of `401`:
+
+```go
+mux.Handle("/api/", auth.UseAPIAuthorization(auth.WithReauthorize())(api))
+```
+
+When the request carries `cra: t` (or any truthy value) and a valid WEB session cookie, the response is:
+
+```json
+{
+  "reauthorize": true,
+  "session_id": "…",
+  "user": { "id": "…", "roles": ["user:rw"] },
+  "tokens": { "access_token": "…", "refresh_token": "…" }
+}
+```
+
+`@workspace/network` signs that into the store and retries with `Authorization: Bearer …`. Later refreshes can use either the refresh JWT or the `cft` header + session cookie (`HandleRefreshToken`). Unlike the OAuth callback under `KeepRefreshTokenServerSide`, cra bootstrap always returns both tokens so clients that need Bearer-based refresh have a credential after SSO.
+
+Customize the `user` object (email, name, …) with `WithReauthorizeUser`:
+
+```go
+auth.UseAPIAuthorization(auth.WithReauthorizeUser(func(ctx context.Context, session *goauth.Session) (any, error) {
+	return loadPublicUser(ctx, session.UserID)
+}))
+```
+
 ## Combining middlewares
 
 Middlewares are plain functions, so they compose:
@@ -139,7 +168,7 @@ If your SPA runs on another origin, the browser sends a preflight request withou
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "https://spa.example.com")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, cft")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, cft, cra")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

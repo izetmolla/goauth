@@ -46,6 +46,33 @@ func TestTrustedClientIP(t *testing.T) {
 	}
 }
 
+func TestTrustedClientIPCloudflare(t *testing.T) {
+	a := newHardeningAuth(t, Config{TrustCloudflare: true})
+	// 104.16.0.1 is inside Cloudflare's 104.16.0.0/13.
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	r.RemoteAddr = "104.16.0.1:443"
+	r.Header.Set("CF-Connecting-IP", "203.0.113.50")
+	r.Header.Set("X-Forwarded-For", "198.51.100.1") // must lose to CF-Connecting-IP
+	if got := a.trustedClientIP(r); got != "203.0.113.50" {
+		t.Fatalf("CF-Connecting-IP: got %s", got)
+	}
+
+	spoof := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	spoof.RemoteAddr = "198.51.100.7:9"
+	spoof.Header.Set("CF-Connecting-IP", "203.0.113.50")
+	if got := a.trustedClientIP(spoof); got != "198.51.100.7" {
+		t.Fatalf("direct client spoofing CF header: got %s", got)
+	}
+
+	noCF := newHardeningAuth(t, Config{TrustedProxies: []string{"10.0.0.0/8"}})
+	r2 := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	r2.RemoteAddr = "10.0.0.5:1"
+	r2.Header.Set("CF-Connecting-IP", "203.0.113.77")
+	if got := noCF.trustedClientIP(r2); got != "203.0.113.77" {
+		t.Fatalf("trusted non-CF proxy still honors CF-Connecting-IP: got %s", got)
+	}
+}
+
 // Regression: a blacklisted client could send X-Forwarded-For with a
 // whitelisted address and pass the IP check.
 func TestIPAccessIgnoresSpoofedForwardedFor(t *testing.T) {

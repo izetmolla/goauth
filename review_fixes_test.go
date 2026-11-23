@@ -305,16 +305,63 @@ func TestSafeRedirectTrustedOrigins(t *testing.T) {
 		trustedRedirectOrigins: []string{"http://127.0.0.1:3001"},
 	}
 	cases := map[string]string{
-		"/dashboard":                            "/dashboard",
-		"https://www.flowtrove.dev/app":         "/app",
-		"http://127.0.0.1:3001/reports?x=1":     "http://127.0.0.1:3001/reports?x=1",
-		"https://evil.test/phish":               "",
-		"//evil.test":                           "",
+		"/dashboard":                        "/dashboard",
+		"https://www.flowtrove.dev/app":     "/app",
+		"http://127.0.0.1:3001/reports?x=1": "http://127.0.0.1:3001/reports?x=1",
+		"https://evil.test/phish":           "",
+		"//evil.test":                       "",
 	}
 	for in, want := range cases {
 		if got := a.safeRedirect(in); got != want {
 			t.Errorf("safeRedirect(%q)=%q want %q", in, got, want)
 		}
+	}
+}
+
+func TestProtectedRequestURLIgnoresUntrustedForwardedHost(t *testing.T) {
+	a := &Authorization{}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/app?x=1", nil)
+	req.Host = "app.example.com"
+	req.RemoteAddr = "203.0.113.10:9"
+	req.Header.Set("X-Forwarded-Host", "evil.test")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	if got := a.protectedRequestURL(req); got != "http://app.example.com/app?x=1" {
+		t.Fatalf("untrusted forward: %q", got)
+	}
+
+	trusted, err := parseTrustedProxies([]string{"10.0.0.0/8"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.trustedProxies = trusted
+	req.RemoteAddr = "10.0.0.5:9"
+	if got := a.protectedRequestURL(req); got != "https://evil.test/app?x=1" {
+		t.Fatalf("trusted forward: %q", got)
+	}
+}
+
+func TestSignInPageKeepsTrustedAbsoluteRedirect(t *testing.T) {
+	a := uiAuth(t, Config{
+		AuthURL:                "https://www.flowtrove.dev",
+		TrustedRedirectOrigins: []string{"http://127.0.0.1:3001"},
+	})
+	target := "http://127.0.0.1:3001/reports?tab=1"
+	rec := do(t, a.Handler(), http.MethodGet, DefaultBasePath+"/signin?redirectUrl="+url.QueryEscape(target), nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-redirect="`+target+`"`) {
+		t.Fatalf("trusted absolute redirect dropped")
+	}
+	if !strings.Contains(body, `name="redirectUrl" value="`+target+`"`) {
+		t.Fatal("form hidden redirectUrl missing trusted absolute URL")
+	}
+	encoded := url.QueryEscape(target)
+	// OTP / done links are off unless those features are enabled; the form
+	// and data-redirect already carry the absolute trusted URL.
+	if strings.Contains(body, "Email me a sign-in code") && !strings.Contains(body, "redirectUrl="+encoded) {
+		t.Fatal("OTP link must query-escape absolute redirectUrl")
 	}
 }
 

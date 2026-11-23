@@ -9,7 +9,7 @@ Two optional features, both off by default and both stored in goauth-owned table
 
 ## Behind a proxy: set `TrustedProxies` first
 
-Both features need the real client address. goauth reads `X-Forwarded-For` and `X-Real-IP` **only** when the request arrives from a proxy listed in `TrustedProxies`; otherwise it uses the TCP peer address. Without this rule, any client could send `X-Forwarded-For: <allowed address>` and bypass the IP rules or spread failed logins across fake addresses.
+Both features need the real client address. goauth reads `CF-Connecting-IP`, `X-Forwarded-For` and `X-Real-IP` **only** when the request arrives from a proxy listed in `TrustedProxies`; otherwise it uses the TCP peer address. Without this rule, any client could send `X-Forwarded-For: <allowed address>` and bypass the IP rules or spread failed logins across fake addresses.
 
 ```go
 goauth.New(&goauth.Config{
@@ -18,7 +18,20 @@ goauth.New(&goauth.Config{
 })
 ```
 
-`X-Forwarded-For` is read right to left, skipping trusted proxies, so a client cannot prepend a fake address either. Leave `TrustedProxies` empty when clients connect to your app directly.
+### Cloudflare
+
+When the app is behind Cloudflare (orange-cloud proxy or tunnel), set `TrustCloudflare` so goauth trusts Cloudflare's published edge ranges and prefers the `CF-Connecting-IP` header:
+
+```go
+goauth.New(&goauth.Config{
+	// ...
+	TrustCloudflare: true,
+	// Optional: also trust a private load balancer in front of the app
+	TrustedProxies: []string{"10.0.0.0/8"},
+})
+```
+
+Header order when the peer is trusted: `CF-Connecting-IP`, then `True-Client-IP`, then `X-Forwarded-For` (right to left, skipping trusted proxies), then `X-Real-IP`. Leave `TrustedProxies` empty and `TrustCloudflare` false when clients connect to your app directly.
 
 ## Login protection
 

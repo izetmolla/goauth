@@ -75,6 +75,8 @@ auth, err := goauth.New(&goauth.Config{
 | `UserTableName` | `users` | Must have `id` and `roles` columns. |
 | `SessionTableName` | `sessions` | See [Database setup](../getting-started/database-setup.md). |
 | `TablePrefix` | `goauth_` | Prefix of the tables goauth owns. See [Table names](#table-names). |
+| `TrustedProxies` | empty | Proxy IPs/CIDRs whose `CF-Connecting-IP` / `X-Forwarded-For` / `X-Real-IP` are believed. See [Login protection and IP access](./login-protection-and-ip-access.md#behind-a-proxy-set-trustedproxies-first). |
+| `TrustCloudflare` | `false` | Merge Cloudflare edge CIDRs into trusted proxies and prefer `CF-Connecting-IP`. |
 | `TrustedRedirectOrigins` | empty | Extra `http(s)://host` origins allowed in `redirectUrl` after sign-in (other apps). |
 | `AutoMigrate` | `false` | When true, `New` runs [`Migrate`](#table-names): sessions plus every enabled feature table. Does not touch `users`. |
 | `Redis` | none | See [Sessions and Redis](./sessions-and-redis.md). |

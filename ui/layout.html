@@ -195,7 +195,7 @@
     <div class="ga-panel ga-panel--ok" data-for="done">
       <div class="ga-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
       <p id="ga-done-text">{{template "donetext" .}}</p>
-      <a class="ga-submit ga-submit--link" href="{{.Links.SignIn}}?redirectUrl={{.Redirect}}">Continue to sign in</a>
+      <a class="ga-submit ga-submit--link" href="{{.Links.SignIn}}?redirectUrl={{queryEscape .Redirect}}">Continue to sign in</a>
     </div>
 {{- end}}
 

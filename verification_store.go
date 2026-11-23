@@ -28,6 +28,9 @@ func (a *Authorization) MigrateVerificationTokens(ctx context.Context) error {
 	if a == nil || a.db == nil {
 		return ErrNotInitialized
 	}
+	if a.verify == nil || a.verify.table == "" {
+		return errors.New("verification is not configured")
+	}
 	return a.db.WithContext(ctx).Table(a.verify.table).AutoMigrate(&VerificationToken{})
 }
 

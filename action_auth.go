@@ -357,7 +357,7 @@ func (a *Authorization) WithMethod(method string) AuthorizeOptionsFunc {
 func (a *Authorization) SessionMetaFromRequest(r *http.Request, method string) []AuthorizeOptionsFunc {
 	return []AuthorizeOptionsFunc{
 		a.WithContext(r.Context()),
-		a.WithIPAddress(clientIP(r)),
+		a.WithIPAddress(a.trustedClientIP(r)),
 		a.WithUserAgent(r.UserAgent()),
 		a.WithMethod(method),
 	}
