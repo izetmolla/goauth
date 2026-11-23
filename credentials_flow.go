@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"mime"
 	"net/http"
@@ -117,7 +118,8 @@ func readForm(w http.ResponseWriter, r *http.Request, fields []CredentialField) 
 	in := formInput{
 		values:    make(map[string]string, len(fields)),
 		csrfToken: raw["csrfToken"],
-		redirect:  sanitizeRedirectPath(cmp.Or(raw["redirectUrl"], raw["callbackUrl"])),
+		// Kept raw here; postForm runs safeRedirect so TrustedRedirectOrigins apply.
+		redirect: strings.TrimSpace(cmp.Or(raw["redirectUrl"], raw["callbackUrl"])),
 	}
 	for _, f := range fields {
 		v := raw[f.Name]
@@ -155,6 +157,7 @@ func (a *Authorization) postForm(w http.ResponseWriter, r *http.Request, page st
 		a.failure(w, r, page, http.StatusForbidden, codeCSRF, "Your session expired. Reload the page and try again.", "")
 		return formInput{}, false
 	}
+	in.redirect = a.safeRedirect(in.redirect)
 	return in, true
 }
 
@@ -291,7 +294,7 @@ func (a *Authorization) finishSignIn(w http.ResponseWriter, r *http.Request, pag
 		"user":         user,
 		"tokens":       tokens,
 		"session_id":   sessionID,
-		"redirect_url": cmp.Or(redirect, a.defaultRedirect()),
+		"redirect_url": cmp.Or(a.safeRedirect(redirect), a.defaultRedirect()),
 	}
 	if tokenFlow || wantsJSON(r) {
 		writeJSON(w, http.StatusOK, payload)
@@ -380,7 +383,7 @@ func (a *Authorization) defaultRedirect() string {
 
 // sanitizeRedirectPath turns a post-sign-in target into a same-origin path.
 // Absolute URLs, protocol-relative "//host" and "/\host" forms are rejected
-// so the page can never be used as an open redirect.
+// so the page can never be used as an open redirect. See also safeRedirect.
 func sanitizeRedirectPath(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || strings.HasPrefix(raw, "/\\") {
@@ -398,4 +401,67 @@ func fragment(u *url.URL) string {
 		return ""
 	}
 	return "#" + u.EscapedFragment()
+}
+
+// parseTrustedRedirectOrigins normalizes Config.TrustedRedirectOrigins to
+// "scheme://host" entries.
+func parseTrustedRedirectOrigins(raw []string) ([]string, error) {
+	out := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		origin, _, err := parseOriginURL(s)
+		if err != nil {
+			return nil, fmt.Errorf("TrustedRedirectOrigins entry %q: %w", s, err)
+		}
+		if origin == "" {
+			continue
+		}
+		key := strings.ToLower(origin)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, origin)
+	}
+	return out, nil
+}
+
+// safeRedirect accepts a same-origin path, an absolute URL on AuthURL, or an
+// absolute URL whose origin is listed in TrustedRedirectOrigins. Everything
+// else is rejected (empty string) to prevent open redirects.
+func (a *Authorization) safeRedirect(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if p := sanitizeRedirectPath(raw); p != "" {
+		return p
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != schemeHTTPS) {
+		return ""
+	}
+	candidate := strings.ToLower(u.Scheme + "://" + u.Host)
+	path := u.RequestURI() + fragment(u)
+	if path == "" {
+		path = "/"
+	}
+	if a != nil && a.AuthURL != "" {
+		if authOrigin, _, err := parseOriginURL(a.AuthURL); err == nil && authOrigin != "" &&
+			strings.EqualFold(candidate, authOrigin) {
+			return path
+		}
+	}
+	if a != nil {
+		for _, origin := range a.trustedRedirectOrigins {
+			if strings.EqualFold(candidate, origin) {
+				return origin + path
+			}
+		}
+	}
+	return ""
 }

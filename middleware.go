@@ -111,16 +111,58 @@ func (a *Authorization) protect(opts []AuthConfigOptions, authenticate func(http
 }
 
 // getAuthRedirectURL builds the sign-in URL with a redirectUrl query
-// parameter pointing back at the original request. The origin comes from
-// AuthURL when it is set, so the URL is right behind a reverse proxy.
+// parameter pointing back at the page the user asked for.
+//
+// The sign-in target is SignInRedirectURL. When that value is relative and
+// AuthURL is set, it is resolved against AuthURL so a central auth host
+// (AUTH_URL=https://auth.example.com) receives anonymous users from other
+// apps. Absolute SignInRedirectURL values are used as is.
+//
+// redirectUrl is always the incoming request (honoring X-Forwarded-Host /
+// X-Forwarded-Proto), not AuthURL — AuthURL may be the auth portal, while
+// the protected page lives on another origin.
 func (a *Authorization) getAuthRedirectURL(r *http.Request) string {
-	origin, _, err := a.origin(r)
-	if err != nil {
-		origin = requestScheme(r) + "://" + r.Host
-	}
+	signIn := a.absoluteSignInURL()
 	sep := "?"
-	if strings.Contains(a.signInRedirectURL, "?") {
+	if strings.Contains(signIn, "?") {
 		sep = "&"
 	}
-	return a.signInRedirectURL + sep + "redirectUrl=" + url.QueryEscape(origin+r.URL.RequestURI())
+	return signIn + sep + "redirectUrl=" + url.QueryEscape(a.protectedRequestURL(r))
+}
+
+// absoluteSignInURL is the Location target for anonymous WEB users.
+func (a *Authorization) absoluteSignInURL() string {
+	path := a.signInRedirectURL
+	if path == "" {
+		path = DefaultSignInRedirectURL
+	}
+	if isAbsoluteHTTPURL(path) {
+		return path
+	}
+	if a == nil || a.AuthURL == "" {
+		return path
+	}
+	origin, _, err := parseOriginURL(a.AuthURL)
+	if err != nil || origin == "" {
+		return path
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return origin + path
+}
+
+// protectedRequestURL is the URL UseWEBAuthorization sends back in
+// redirectUrl: scheme + host of the request being gated, plus its path.
+func (a *Authorization) protectedRequestURL(r *http.Request) string {
+	host := r.Host
+	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
+		host = fwd
+	}
+	return requestScheme(r) + "://" + host + r.URL.RequestURI()
+}
+
+func isAbsoluteHTTPURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == schemeHTTPS)
 }

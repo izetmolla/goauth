@@ -278,6 +278,46 @@ func TestWEBMiddlewareSharesThePrincipal(t *testing.T) {
 	}
 }
 
+func TestWEBMiddlewareRedirectsToAuthURLSignIn(t *testing.T) {
+	db := openLoginAsDB(t)
+	seedLoginAsUsers(t, db)
+	a := newLoginAsAuth(t, db, false)
+	a.AuthURL = "https://www.flowtrove.dev"
+	a.signInRedirectURL = "/sign-in"
+
+	page := a.UseWEBAuthorization()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler must not run")
+	}))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/reports?tab=1", nil)
+	req.Host = "127.0.0.1:3001"
+	rec := httptest.NewRecorder()
+	page.ServeHTTP(rec, req)
+
+	want := "https://www.flowtrove.dev/sign-in?redirectUrl=" + url.QueryEscape("http://127.0.0.1:3001/reports?tab=1")
+	if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != want {
+		t.Fatalf("got %d %q want %q", rec.Code, rec.Header().Get("Location"), want)
+	}
+}
+
+func TestSafeRedirectTrustedOrigins(t *testing.T) {
+	a := &Authorization{
+		AuthURL:                "https://www.flowtrove.dev",
+		trustedRedirectOrigins: []string{"http://127.0.0.1:3001"},
+	}
+	cases := map[string]string{
+		"/dashboard":                            "/dashboard",
+		"https://www.flowtrove.dev/app":         "/app",
+		"http://127.0.0.1:3001/reports?x=1":     "http://127.0.0.1:3001/reports?x=1",
+		"https://evil.test/phish":               "",
+		"//evil.test":                           "",
+	}
+	for in, want := range cases {
+		if got := a.safeRedirect(in); got != want {
+			t.Errorf("safeRedirect(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
 func TestFormatUserKeepsIDAndRoles(t *testing.T) {
 	got := FormatUser(&User{ID: "real", Roles: JSONBArray{"a"}, User: JSONBAny{"id": "spoofed", "name": "Jane"}}).(map[string]any)
 	if got["id"] != "real" || got["name"] != "Jane" {

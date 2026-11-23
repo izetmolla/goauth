@@ -75,6 +75,7 @@ auth, err := goauth.New(&goauth.Config{
 | `UserTableName` | `users` | Must have `id` and `roles` columns. |
 | `SessionTableName` | `sessions` | See [Database setup](../getting-started/database-setup.md). |
 | `TablePrefix` | `goauth_` | Prefix of the tables goauth owns. See [Table names](#table-names). |
+| `TrustedRedirectOrigins` | empty | Extra `http(s)://host` origins allowed in `redirectUrl` after sign-in (other apps). |
 | `AutoMigrate` | `false` | When true, `New` runs [`Migrate`](#table-names): sessions plus every enabled feature table. Does not touch `users`. |
 | `Redis` | none | See [Sessions and Redis](./sessions-and-redis.md). |
 | `RedisPrefix` | `AUTHSESSIONS` | Keys look like `AUTHSESSIONS:<session id>`. |

@@ -216,7 +216,11 @@ func (a *Authorization) renderPage(w http.ResponseWriter, r *http.Request, page 
 		JSURL:        assetURL("goauth.js"),
 		SessionJSURL: assetURL("session.js"),
 		Token:        q.Get(fieldToken),
-		Redirect:     cmp.Or(sameOriginRedirect(origin, cmp.Or(q.Get("redirectUrl"), q.Get("callbackUrl"))), a.defaultRedirect()),
+		Redirect: cmp.Or(
+			a.safeRedirect(cmp.Or(q.Get("redirectUrl"), q.Get("callbackUrl"))),
+			sameOriginRedirect(origin, cmp.Or(q.Get("redirectUrl"), q.Get("callbackUrl"))),
+			a.defaultRedirect(),
+		),
 		CSRFToken:    a.ensureCSRFToken(w, r, secure),
 		Error:        errorMessages[q.Get("error")],
 		Links:        a.pageLinks(),

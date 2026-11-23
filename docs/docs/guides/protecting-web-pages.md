@@ -36,7 +36,7 @@ When the cookie is missing, unknown, signed out or expired, the user is redirect
 /sign-in?redirectUrl=https%3A%2F%2Fapp.example.com%2Fdashboard%3Ftab%3Dbilling
 ```
 
-The target is `Config.SignInRedirectURL` (default `/sign-in`), and the original URL is built from `AuthURL` when it is set, so it is correct behind a reverse proxy. Database errors return `500` JSON instead of redirecting.
+The target is `Config.SignInRedirectURL` (default `/sign-in`). When that path is relative and `AuthURL` is set, the Location is absolute on `AuthURL` (so a central auth host works). `redirectUrl` is the page that was requested (request host, honoring `X-Forwarded-Host` / `X-Forwarded-Proto`), not `AuthURL`. Database errors return `500` JSON instead of redirecting.
 
 ## A sign-in page that returns the user
 

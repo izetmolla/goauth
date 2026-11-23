@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- **`UseWEBAuthorization` redirect uses `AuthURL` for the sign-in host.** A relative `SignInRedirectURL` is resolved against `AuthURL`, and `redirectUrl` is the protected request URL (not `AuthURL`). Add `TrustedRedirectOrigins` so post-sign-in can return to other apps.
+
 ### Added
 
 - **`Config.AutoMigrate`** runs `auth.Migrate` inside `New`: creates/updates the sessions table and every enabled feature table (verification tokens, TOTP, login attempts, IP access). Off by default. Also adds `Migrate`, `MigrateSessions`, and `HasMigrated`. The users table is never migrated.

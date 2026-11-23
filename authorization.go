@@ -102,6 +102,13 @@ type Config struct {
 	// means the headers are ignored and the TCP peer address is used, so set
 	// it when goauth runs behind a load balancer.
 	TrustedProxies []string
+
+	// TrustedRedirectOrigins are extra http(s) origins allowed in post-sign-in
+	// redirectUrl values (in addition to AuthURL / same-origin paths). Use
+	// this when UseWEBAuthorization on another app sends users here with
+	// redirectUrl=https://app.example.com/…. Empty rejects all foreign
+	// absolute redirects.
+	TrustedRedirectOrigins []string
 }
 
 // Authorization is the configured authentication service. Create it once
@@ -142,7 +149,10 @@ type Authorization struct {
 	ipAccess  *ipAccess
 	// trustedProxies are parsed Config.TrustedProxies.
 	trustedProxies []*net.IPNet
-	pages          map[string]string // page name -> path, only pages that are on
+	// trustedRedirectOrigins are normalized "scheme://host" values from
+	// Config.TrustedRedirectOrigins.
+	trustedRedirectOrigins []string
+	pages                  map[string]string // page name -> path, only pages that are on
 
 	// Resolved once in New so hot paths never re-parse configuration.
 	accessTTL  time.Duration
@@ -222,6 +232,10 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 	if err != nil {
 		return nil, err
 	}
+	trustedRedirectOrigins, err := parseTrustedRedirectOrigins(cfg.TrustedRedirectOrigins)
+	if err != nil {
+		return nil, err
+	}
 
 	var cookies CookieOptions
 	if cfg.Cookies != nil {
@@ -258,8 +272,9 @@ func New(config *Config, opts ...ConfigFunc) (*Authorization, error) {
 		totp:                       totp,
 		loginAs:                    loginAs,
 		loginProt:                  loginProt,
-		ipAccess:                   ipAccess,
-		trustedProxies:             trustedProxies,
+		ipAccess:               ipAccess,
+		trustedProxies:         trustedProxies,
+		trustedRedirectOrigins: trustedRedirectOrigins,
 	}
 	if err := a.resolvePages(cfg.UI); err != nil {
 		return nil, err
