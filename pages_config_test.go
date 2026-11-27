@@ -126,9 +126,13 @@ func TestCustomPagePaths(t *testing.T) {
 			t.Errorf("old path GET %s = %d, want 404", p, rec.Code)
 		}
 	}
-	// Links between pages use the new paths.
+	// Links between pages use the new paths (withRedirect keeps default "/").
 	body := do(t, h, http.MethodGet, "/sign-in", nil, nil).Body.String()
-	for _, link := range []string{`href="/sign-up"`, `href="/account/forgot"`, `href="/login/code?`} {
+	for _, link := range []string{
+		`href="/sign-up?redirectUrl=%2F"`,
+		`href="/account/forgot?redirectUrl=%2F"`,
+		`href="/login/code?redirectUrl=%2F"`,
+	} {
 		if !strings.Contains(body, link) {
 			t.Errorf("sign-in page missing %s", link)
 		}
