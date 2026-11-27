@@ -115,7 +115,7 @@ func (a *Authorization) protectConfig(cfg *AuthConfig, authenticate func(http.Re
 			}
 			if len(cfg.roles) > 0 {
 				if hasRole, _, _ := a.GetRole(cfg.roles, roles()); !hasRole {
-					writeAPIError(w, http.StatusForbidden, codeInsufficientPermissions, "insufficient permissions: "+strings.Join(cfg.roles, ", "))
+					writeRoleDenied(w, r, cfg)
 					return
 				}
 			}

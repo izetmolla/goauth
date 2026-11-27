@@ -17,6 +17,29 @@ type AuthConfig struct {
 	reauthorize bool
 	// reauthorizeUser customizes the user field of the reauthorize payload.
 	reauthorizeUser ReauthorizeUserFunc
+	// render customizes the response when a role gate denies access.
+	render *RenderOptions
+}
+
+// RenderOptions customizes the HTTP response written when WithRoles denies
+// an authenticated caller. Nil / zero WithRender keeps the default JSON 403.
+//
+// Precedence: RedirectURL > HTML > Body > Message > default JSON message.
+type RenderOptions struct {
+	// Status is the HTTP status for non-redirect responses (default 403).
+	// For RedirectURL, defaults to 302 when unset or below 300.
+	Status int
+	// Message replaces the default JSON error string in the
+	// {"error","code":"INSUFFICIENT_PERMISSIONS"} envelope.
+	Message string
+	// Body is a raw response body (text/plain unless ContentType is set).
+	Body string
+	// HTML is a text/html body and takes precedence over Body.
+	HTML string
+	// ContentType overrides the Content-Type for Body responses.
+	ContentType string
+	// RedirectURL issues an HTTP redirect and takes precedence over bodies/messages.
+	RedirectURL string
 }
 
 // AuthConfigOptions mutates an AuthConfig in place.
@@ -60,6 +83,20 @@ func WithRoles(roles []string) AuthConfigOptions {
 // user must hold at least one of them.
 func (a *Authorization) WithRoles(roles []string) AuthConfigOptions {
 	return WithRoles(roles)
+}
+
+// WithRender customizes the response when a WithRoles gate denies access.
+// See RenderOptions for field precedence. Optional — omit for default JSON 403.
+func WithRender(opts RenderOptions) AuthConfigOptions {
+	return func(c *AuthConfig) {
+		copy := opts
+		c.render = &copy
+	}
+}
+
+// WithRender customizes the response when a WithRoles gate denies access.
+func (a *Authorization) WithRender(opts RenderOptions) AuthConfigOptions {
+	return WithRender(opts)
 }
 
 // WithReauthorize enables the cra header handshake used by browser clients

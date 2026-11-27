@@ -268,3 +268,108 @@ func TestUseAPIAuthorizationRejectsRefreshTokens(t *testing.T) {
 		})
 	}
 }
+
+func TestWithRenderRoleDenied(t *testing.T) {
+	const secret = "test-secret"
+	a := &Authorization{JWTSecret: secret}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	token := "Bearer " + signTestAccessToken(t, secret, []any{"hr:r"})
+
+	run := func(opts ...AuthConfigOptions) *httptest.ResponseRecorder {
+		t.Helper()
+		protected := a.UseAPIAuthorization(append([]AuthConfigOptions{a.WithRoles([]string{"admin"})}, opts...)...)(next)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/protected", nil)
+		r.Header.Set("Authorization", token)
+		w := httptest.NewRecorder()
+		protected.ServeHTTP(w, r)
+		return w
+	}
+
+	t.Run("default json", func(t *testing.T) {
+		w := run()
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), codeInsufficientPermissions) {
+			t.Fatalf("body = %s", w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "insufficient permissions: admin") {
+			t.Fatalf("body = %s", w.Body.String())
+		}
+	})
+
+	t.Run("custom message", func(t *testing.T) {
+		w := run(WithRender(RenderOptions{Message: "Administrator access required"}))
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "Administrator access required") {
+			t.Fatalf("body = %s", w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), codeInsufficientPermissions) {
+			t.Fatalf("body = %s", w.Body.String())
+		}
+	})
+
+	t.Run("html", func(t *testing.T) {
+		w := run(WithRender(RenderOptions{
+			HTML:    "<h1>Forbidden</h1>",
+			Message: "ignored when html set",
+		}))
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d", w.Code)
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+			t.Fatalf("content-type = %q", ct)
+		}
+		if w.Body.String() != "<h1>Forbidden</h1>" {
+			t.Fatalf("body = %s", w.Body.String())
+		}
+	})
+
+	t.Run("body with content type", func(t *testing.T) {
+		w := run(WithRender(RenderOptions{
+			Body:        `{"denied":true}`,
+			ContentType: "application/problem+json",
+			Status:      http.StatusForbidden,
+		}))
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d", w.Code)
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "application/problem+json" {
+			t.Fatalf("content-type = %q", ct)
+		}
+		if w.Body.String() != `{"denied":true}` {
+			t.Fatalf("body = %s", w.Body.String())
+		}
+	})
+
+	t.Run("redirect wins over html", func(t *testing.T) {
+		w := run(WithRender(RenderOptions{
+			RedirectURL: "/forbidden",
+			HTML:        "<h1>nope</h1>",
+			Message:     "nope",
+		}))
+		if w.Code != http.StatusFound {
+			t.Fatalf("status = %d, want 302", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != "/forbidden" {
+			t.Fatalf("location = %q", loc)
+		}
+	})
+
+	t.Run("custom redirect status", func(t *testing.T) {
+		w := run(WithRender(RenderOptions{
+			RedirectURL: "https://portal.example/sign-in",
+			Status:      http.StatusSeeOther,
+		}))
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("status = %d, want 303", w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != "https://portal.example/sign-in" {
+			t.Fatalf("location = %q", loc)
+		}
+	})
+}

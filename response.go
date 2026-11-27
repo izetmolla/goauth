@@ -29,6 +29,54 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, Map{"error": message, "code": code})
 }
 
+// writeRoleDenied writes the response for a failed WithRoles gate.
+// When cfg.render is set, applies RenderOptions precedence; otherwise the
+// default JSON 403 envelope.
+func writeRoleDenied(w http.ResponseWriter, r *http.Request, cfg *AuthConfig) {
+	defaultMsg := "insufficient permissions"
+	if cfg != nil && len(cfg.roles) > 0 {
+		defaultMsg = "insufficient permissions: " + strings.Join(cfg.roles, ", ")
+	}
+	if cfg == nil || cfg.render == nil {
+		writeAPIError(w, http.StatusForbidden, codeInsufficientPermissions, defaultMsg)
+		return
+	}
+	ro := cfg.render
+	if url := strings.TrimSpace(ro.RedirectURL); url != "" {
+		status := ro.Status
+		if status < http.StatusMultipleChoices || status > http.StatusPermanentRedirect {
+			status = http.StatusFound
+		}
+		http.Redirect(w, r, url, status)
+		return
+	}
+	status := ro.Status
+	if status == 0 {
+		status = http.StatusForbidden
+	}
+	if html := ro.HTML; html != "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(html))
+		return
+	}
+	if body := ro.Body; body != "" {
+		ct := strings.TrimSpace(ro.ContentType)
+		if ct == "" {
+			ct = "text/plain; charset=utf-8"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+		return
+	}
+	msg := strings.TrimSpace(ro.Message)
+	if msg == "" {
+		msg = defaultMsg
+	}
+	writeAPIError(w, status, codeInsufficientPermissions, msg)
+}
+
 // writeJSON serializes v as the JSON response body with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
