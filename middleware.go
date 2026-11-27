@@ -173,7 +173,7 @@ func (a *Authorization) writeReauthorize(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 
-	user := any(FormatUser(&session.User))
+	user := FormatUser(&session.User)
 	if cfg != nil && cfg.reauthorizeUser != nil {
 		custom, err := cfg.reauthorizeUser(r.Context(), session)
 		if err != nil {
@@ -245,7 +245,7 @@ func (a *Authorization) absoluteSignInURL() string {
 // a Config.TrustedProxies entry, matching trustedClientIP.
 func (a *Authorization) protectedRequestURL(r *http.Request) string {
 	host := r.Host
-	scheme := "http"
+	scheme := schemeHTTP
 	if r.TLS != nil {
 		scheme = schemeHTTPS
 	}
@@ -260,5 +260,5 @@ func (a *Authorization) protectedRequestURL(r *http.Request) string {
 
 func isAbsoluteHTTPURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == schemeHTTPS)
+	return err == nil && u.Host != "" && (u.Scheme == schemeHTTP || u.Scheme == schemeHTTPS)
 }

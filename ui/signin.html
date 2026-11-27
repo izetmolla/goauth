@@ -13,20 +13,20 @@
       {{- range .Fields}}
       {{- template "field" .}}
       {{- if and .IsPassword $.Links.Forgot}}
-      <div class="ga-aux"><a href="{{$.Links.Forgot}}" data-carry-email>Forgot password?</a></div>
+      <div class="ga-aux"><a href="{{withRedirect $.Links.Forgot $.Redirect}}" data-carry-email>Forgot password?</a></div>
       {{- end}}
       {{- end}}
       {{template "submit" "Sign in"}}
     </form>
     {{- end}}
     {{- if .Links.OTP}}
-    <a class="ga-secondary" href="{{.Links.OTP}}?redirectUrl={{queryEscape .Redirect}}" data-carry-email>
+    <a class="ga-secondary" href="{{withRedirect .Links.OTP .Redirect}}" data-carry-email>
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 7l9 6 9-6"/></svg>
       Email me a sign-in code
     </a>
     {{- end}}
     {{- if .Links.Register}}
-    <p class="ga-switch">New here? <a href="{{.Links.Register}}">Create an account</a></p>
+    <p class="ga-switch">New here? <a href="{{withRedirect .Links.Register .Redirect}}">Create an account</a></p>
     {{- end}}
     {{- if not (or .OAuth .Credentials .Links.OTP)}}
     <p class="ga-empty">No sign-in methods are configured yet.</p>

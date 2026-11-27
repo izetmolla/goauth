@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 )
 
 // pageTemplates holds one template set per page: the shared layout plus the
@@ -28,6 +29,26 @@ var pageFuncs = template.FuncMap{
 	// TrustedRedirectOrigins URLs contain "://" and "?" that must not break
 	// the surrounding link).
 	"queryEscape": url.QueryEscape,
+	// withRedirect appends ?redirectUrl=… (or &redirectUrl=…) so Sign in /
+	// Sign up tabs and switch links keep the post-sign-in target.
+	"withRedirect": withRedirect,
+}
+
+// withRedirect appends redirectUrl to a page link so navigation between
+// sign-in, register, forgot, and OTP keeps the post-sign-in target.
+// It returns template.URL so html/template does not re-escape "?" / "=" in href.
+func withRedirect(path, redirect string) template.URL {
+	if path == "" {
+		return ""
+	}
+	if redirect == "" {
+		return template.URL(path)
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return template.URL(path + sep + "redirectUrl=" + url.QueryEscape(redirect))
 }
 
 type fieldErrorView struct{ ID, Message string }

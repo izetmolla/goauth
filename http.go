@@ -1,7 +1,6 @@
 package goauth
 
 import (
-	"net"
 	"net/http"
 	"strings"
 )
@@ -151,28 +150,15 @@ func isSecureRequest(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), schemeHTTPS)
 }
 
-// schemeHTTPS is the URL scheme that makes cookies Secure.
-const schemeHTTPS = "https"
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https" // makes cookies Secure
+)
 
 // requestScheme returns "https" or "http" for the request (see isSecureRequest).
 func requestScheme(r *http.Request) string {
 	if isSecureRequest(r) {
 		return schemeHTTPS
 	}
-	return "http"
-}
-
-// clientIP returns the caller address, preferring proxy-forwarded headers.
-func clientIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		ip, _, _ := strings.Cut(fwd, ",")
-		return strings.TrimSpace(ip)
-	}
-	if ip := r.Header.Get("X-Real-Ip"); ip != "" {
-		return ip
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
+	return schemeHTTP
 }

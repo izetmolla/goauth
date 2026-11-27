@@ -63,7 +63,7 @@ func parseOriginURL(raw string) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("invalid AuthURL: %w", err)
 	}
-	if u.Host == "" || (u.Scheme != "http" && u.Scheme != schemeHTTPS) {
+	if u.Host == "" || (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) {
 		return "", false, fmt.Errorf("invalid AuthURL %q: want http(s)://host", raw)
 	}
 	return u.Scheme + "://" + u.Host, u.Scheme == schemeHTTPS, nil

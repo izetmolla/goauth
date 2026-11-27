@@ -18,7 +18,7 @@
       {{template "submit" "Create account"}}
     </form>
     {{- end}}
-    <p class="ga-switch">Already have an account? <a href="{{.Links.SignIn}}">Sign in</a></p>
+    <p class="ga-switch">Already have an account? <a href="{{withRedirect .Links.SignIn .Redirect}}">Sign in</a></p>
     </div>
     {{- template "sent" .}}
     {{- if .Links.Verify}}{{template "resend" .}}{{end}}

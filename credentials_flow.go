@@ -442,7 +442,7 @@ func (a *Authorization) safeRedirect(raw string) string {
 		return p
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.User != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != schemeHTTPS) {
+	if err != nil || u.User != nil || u.Host == "" || (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) {
 		return ""
 	}
 	candidate := strings.ToLower(u.Scheme + "://" + u.Host)

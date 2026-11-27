@@ -83,8 +83,8 @@
     {{- if .Links.Register}}
     <nav class="ga-tabs" aria-label="Sign in or create an account">
       <span class="ga-tabs-pill" aria-hidden="true"></span>
-      <a class="ga-tab" href="{{.Links.SignIn}}"{{if eq .Page "signin"}} aria-current="page"{{end}}>Sign in</a>
-      <a class="ga-tab" href="{{.Links.Register}}"{{if eq .Page "register"}} aria-current="page"{{end}}>Sign up</a>
+      <a class="ga-tab" href="{{withRedirect .Links.SignIn .Redirect}}"{{if eq .Page "signin"}} aria-current="page"{{end}}>Sign in</a>
+      <a class="ga-tab" href="{{withRedirect .Links.Register .Redirect}}"{{if eq .Page "register"}} aria-current="page"{{end}}>Sign up</a>
     </nav>
     {{- end}}
 {{- end}}
@@ -195,12 +195,12 @@
     <div class="ga-panel ga-panel--ok" data-for="done">
       <div class="ga-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
       <p id="ga-done-text">{{template "donetext" .}}</p>
-      <a class="ga-submit ga-submit--link" href="{{.Links.SignIn}}?redirectUrl={{queryEscape .Redirect}}">Continue to sign in</a>
+      <a class="ga-submit ga-submit--link" href="{{withRedirect .Links.SignIn .Redirect}}">Continue to sign in</a>
     </div>
 {{- end}}
 
 {{define "back"}}
-    <p class="ga-switch"><a href="{{.Links.SignIn}}" class="ga-back"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5l-5 5 5 5"/></svg>Back to sign in</a></p>
+    <p class="ga-switch"><a href="{{withRedirect .Links.SignIn .Redirect}}" class="ga-back"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5l-5 5 5 5"/></svg>Back to sign in</a></p>
 {{- end}}
 
 {{define "different"}}

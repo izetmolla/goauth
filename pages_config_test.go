@@ -80,9 +80,10 @@ func TestPagesOneByOne(t *testing.T) {
 	if rec := do(t, h, http.MethodGet, DefaultBasePath+"/assets/goauth.js", nil, nil); rec.Code != http.StatusOK {
 		t.Error("assets missing while a page is on")
 	}
-	// The sign-in page is off, so "Back to sign in" uses SignInRedirectURL.
+	// The sign-in page is off, so "Back to sign in" uses SignInRedirectURL
+	// (still carrying redirectUrl so a later sign-in can return the user).
 	body := do(t, h, http.MethodGet, DefaultBasePath+"/otp", nil, nil).Body.String()
-	if !strings.Contains(body, `href="`+DefaultSignInRedirectURL+`"`) {
+	if !strings.Contains(body, `href="`+DefaultSignInRedirectURL+`?redirectUrl=`) {
 		t.Error("back link does not fall back to SignInRedirectURL")
 	}
 	// Forgot/verify pages are off: password reset and confirmation emails
