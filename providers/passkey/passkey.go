@@ -16,6 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -74,9 +76,15 @@ type Options struct {
 	ID            string
 	Name          string
 	RPDisplayName string
-	RPID          string
-	RPOrigins     []string
-	Store         Store
+	// RPID is the WebAuthn relying-party ID (hostname only), e.g. "example.com".
+	// Wildcards are not allowed — use Normalize via goauth.NormalizeRPID.
+	RPID string
+	// RPOrigins are allowed browser origins. Exact entries (https://app.example.com)
+	// and subdomain wildcards (https://*.example.com) are accepted. Wildcards are
+	// matched at ceremony time against the request Origin (WebAuthn itself only
+	// stores concrete origins).
+	RPOrigins []string
+	Store     Store
 }
 
 // New returns a configured passkey provider. Store, RPID and RPOrigins are required.
@@ -84,20 +92,32 @@ func New(o Options) (goauth.Provider, error) {
 	if o.Store == nil {
 		return nil, errors.New("passkey: Store is required")
 	}
-	if o.RPID == "" {
-		return nil, errors.New("passkey: RPID is required")
+	rpid, err := goauth.NormalizeRPID(o.RPID)
+	if err != nil {
+		return nil, fmt.Errorf("passkey: RPID: %w", err)
 	}
-	if len(o.RPOrigins) == 0 {
+	allow, err := goauth.ParseOriginAllowlist(o.RPOrigins)
+	if err != nil {
+		return nil, fmt.Errorf("passkey: RPOrigins: %w", err)
+	}
+	if len(allow.Exact) == 0 && len(allow.Wildcards) == 0 {
 		return nil, errors.New("passkey: RPOrigins is required")
 	}
 	display := o.RPDisplayName
 	if display == "" {
 		display = "App"
 	}
+	// WebAuthn requires at least one concrete origin at config time. Wildcards
+	// are admitted dynamically via AllowOrigin; seed with exact entries or a
+	// non-matching placeholder when only wildcards are configured.
+	exact := append([]string(nil), allow.Exact...)
+	if len(exact) == 0 {
+		exact = []string{"https://goauth.invalid"}
+	}
 	wa, err := webauthn.New(&webauthn.Config{
 		RPDisplayName: display,
-		RPID:          o.RPID,
-		RPOrigins:     o.RPOrigins,
+		RPID:          rpid,
+		RPOrigins:     exact,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("passkey: webauthn: %w", err)
@@ -113,13 +133,54 @@ func New(o Options) (goauth.Provider, error) {
 	return &goauth.PasskeyProvider{
 		ProviderID:  id,
 		DisplayName: name,
-		Ceremony:    &ceremony{wa: wa, store: o.Store},
+		Ceremony: &ceremony{
+			wa:        wa,
+			store:     o.Store,
+			wildcards: allow.Wildcards,
+		},
 	}, nil
 }
 
 type ceremony struct {
-	wa    *webauthn.WebAuthn
-	store Store
+	wa        *webauthn.WebAuthn
+	store     Store
+	wildcards []string
+	mu        sync.Mutex
+}
+
+// AllowOrigin admits a concrete browser Origin when it matches an exact
+// RPOrigins entry or a configured *.domain wildcard. Implements the optional
+// goauth.PasskeyOriginBinder used by HandlePasskey.
+func (c *ceremony) AllowOrigin(origin string) error {
+	origin = strings.TrimSpace(origin)
+	if origin == "" || c == nil || c.wa == nil || c.wa.Config == nil {
+		return nil
+	}
+	allow, err := goauth.ParseOriginAllowlist([]string{origin})
+	if err != nil {
+		return fmt.Errorf("passkey: Origin: %w", err)
+	}
+	if len(allow.Wildcards) > 0 {
+		return errors.New("passkey: request Origin must be a concrete origin, not a wildcard")
+	}
+	if len(allow.Exact) != 1 {
+		return nil
+	}
+	normalized := allow.Exact[0]
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, existing := range c.wa.Config.RPOrigins {
+		if strings.EqualFold(existing, normalized) {
+			return nil
+		}
+	}
+	for _, pattern := range c.wildcards {
+		if goauth.OriginMatches(normalized, pattern) {
+			c.wa.Config.RPOrigins = append(c.wa.Config.RPOrigins, normalized)
+			return nil
+		}
+	}
+	return nil
 }
 
 type waUser struct {

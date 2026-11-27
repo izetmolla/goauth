@@ -318,6 +318,99 @@ func TestSafeRedirectTrustedOrigins(t *testing.T) {
 	}
 }
 
+func TestSafeRedirectEmptyAllowlistAllowsAnyHTTPS(t *testing.T) {
+	a := &Authorization{
+		AuthURL:                "https://www.flowtrove.dev",
+		trustedRedirectOrigins: nil,
+	}
+	cases := map[string]string{
+		"https://anywhere.example/app?x=1": "https://anywhere.example/app?x=1",
+		"http://other.test/":               "http://other.test/",
+		"https://www.flowtrove.dev/app":    "/app",
+		"javascript:alert(1)":              "",
+		"//evil.test":                      "",
+	}
+	for in, want := range cases {
+		if got := a.safeRedirect(in); got != want {
+			t.Errorf("safeRedirect(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestSafeRedirectWildcardOrigins(t *testing.T) {
+	origins, err := parseTrustedRedirectOrigins([]string{
+		"http://flowtrove.dev",
+		"http://*.flowtrove.dev",
+		"https://*.flowtrove.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &Authorization{
+		AuthURL:                "https://www.flowtrove.dev",
+		trustedRedirectOrigins: origins,
+	}
+	cases := map[string]string{
+		"http://flowtrove.dev/":                   "http://flowtrove.dev/",
+		"http://www.flowtrove.dev/app":            "http://www.flowtrove.dev/app",
+		"http://admin.flowtrove.dev/x":            "http://admin.flowtrove.dev/x",
+		"http://a.b.flowtrove.dev/nested":         "http://a.b.flowtrove.dev/nested",
+		"https://admin.flowtrove.com/dash":        "https://admin.flowtrove.com/dash",
+		"https://portal.staging.flowtrove.com/ok": "https://portal.staging.flowtrove.com/ok",
+		"https://flowtrove.com/":                  "", // apex not covered by *.
+		"http://flowtrove.com/":                   "", // wrong scheme for https wildcard
+		"https://notflowtrove.com/":               "",
+		"https://evilflowtrove.dev/":              "",
+		"https://flowtrove.dev.evil.test/":        "",
+	}
+	for in, want := range cases {
+		if got := a.safeRedirect(in); got != want {
+			t.Errorf("safeRedirect(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestParseTrustedRedirectOriginsRejectsBadWildcard(t *testing.T) {
+	for _, bad := range []string{"https://*", "https://*.", "https://foo.*.bar", "https://*.*.com"} {
+		if _, err := parseTrustedRedirectOrigins([]string{bad}); err == nil {
+			t.Errorf("expected error for %q", bad)
+		}
+	}
+}
+
+func TestParseOriginAllowlistAndNormalizeRPID(t *testing.T) {
+	allow, err := ParseOriginAllowlist([]string{
+		"https://flowtrove.com",
+		"https://*.flowtrove.com",
+		"*.flowtrove.dev",
+		"",
+		"https://flowtrove.com", // dedupe
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allow.Exact) != 1 || allow.Exact[0] != "https://flowtrove.com" {
+		t.Fatalf("exact = %#v", allow.Exact)
+	}
+	if len(allow.Wildcards) != 2 {
+		t.Fatalf("wildcards = %#v", allow.Wildcards)
+	}
+	if !OriginMatches("https://admin.flowtrove.com", allow.Wildcards[0]) {
+		t.Fatal("expected wildcard match")
+	}
+
+	rpid, err := NormalizeRPID("https://www.flowtrove.com")
+	if err != nil || rpid != "www.flowtrove.com" {
+		t.Fatalf("NormalizeRPID url: %q %v", rpid, err)
+	}
+	if _, err := NormalizeRPID("*.flowtrove.com"); err == nil {
+		t.Fatal("expected wildcard RPID error")
+	}
+	if _, err := NormalizeRPID("https://example.com:443"); err == nil {
+		t.Fatal("expected port RPID error")
+	}
+}
+
 func TestProtectedRequestURLIgnoresUntrustedForwardedHost(t *testing.T) {
 	a := &Authorization{}
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/app?x=1", nil)

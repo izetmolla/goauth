@@ -403,36 +403,21 @@ func fragment(u *url.URL) string {
 	return "#" + u.EscapedFragment()
 }
 
-// parseTrustedRedirectOrigins normalizes Config.TrustedRedirectOrigins to
-// "scheme://host" entries.
+// parseTrustedRedirectOrigins normalizes Config.TrustedRedirectOrigins via
+// ParseOriginAllowlist (exact + *.domain wildcards).
 func parseTrustedRedirectOrigins(raw []string) ([]string, error) {
-	out := make([]string, 0, len(raw))
-	seen := map[string]struct{}{}
-	for _, s := range raw {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		origin, _, err := parseOriginURL(s)
-		if err != nil {
-			return nil, fmt.Errorf("TrustedRedirectOrigins entry %q: %w", s, err)
-		}
-		if origin == "" {
-			continue
-		}
-		key := strings.ToLower(origin)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, origin)
+	allow, err := ParseOriginAllowlist(raw)
+	if err != nil {
+		return nil, fmt.Errorf("TrustedRedirectOrigins: %w", err)
 	}
-	return out, nil
+	return allow.All(), nil
 }
 
 // safeRedirect accepts a same-origin path, an absolute URL on AuthURL, or an
-// absolute URL whose origin is listed in TrustedRedirectOrigins. Everything
-// else is rejected (empty string) to prevent open redirects.
+// absolute http(s) URL. When TrustedRedirectOrigins is non-empty, the URL's
+// origin must match the allowlist (exact or *.domain wildcard). When the
+// allowlist is empty/omitted, any absolute http(s) URL is allowed. Other
+// schemes, credentials in the URL, and malformed values are rejected.
 func (a *Authorization) safeRedirect(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -456,11 +441,13 @@ func (a *Authorization) safeRedirect(raw string) string {
 			return path
 		}
 	}
-	if a != nil {
-		for _, origin := range a.trustedRedirectOrigins {
-			if strings.EqualFold(candidate, origin) {
-				return origin + path
-			}
+	if a == nil || len(a.trustedRedirectOrigins) == 0 {
+		// No allowlist configured → permit any absolute http(s) origin.
+		return candidate + path
+	}
+	for _, origin := range a.trustedRedirectOrigins {
+		if originMatchesTrusted(candidate, origin) {
+			return candidate + path
 		}
 	}
 	return ""

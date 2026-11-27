@@ -41,6 +41,12 @@ func (a *Authorization) HandlePasskey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Unknown provider: "+providerIDFromRequest(r))
 		return
 	}
+	if binder, ok := p.Ceremony.(PasskeyOriginBinder); ok {
+		if err := binder.AllowOrigin(r.Header.Get("Origin")); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	action := passkeyActionFromRequest(r)
 	switch action {
 	case passkeyRegisterBegin:

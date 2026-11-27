@@ -112,8 +112,16 @@ type Config struct {
 	// TrustedRedirectOrigins are extra http(s) origins allowed in post-sign-in
 	// redirectUrl values (in addition to AuthURL / same-origin paths). Use
 	// this when UseWEBAuthorization on another app sends users here with
-	// redirectUrl=https://app.example.com/…. Empty rejects all foreign
-	// absolute redirects.
+	// redirectUrl=https://app.example.com/….
+	//
+	// When empty or omitted, any absolute http(s) redirectUrl is allowed
+	// (no origin allowlist). When non-empty, only listed origins match.
+	//
+	// Entries may be exact origins (https://app.example.com) or a subdomain
+	// wildcard (https://*.example.com or *.example.com). A wildcard matches
+	// any nested subdomain (admin.example.com, a.b.example.com) on the same
+	// scheme; it does not match the apex host (example.com) — list that
+	// separately if needed.
 	TrustedRedirectOrigins []string
 }
 

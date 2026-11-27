@@ -5,6 +5,13 @@ import (
 	"io"
 )
 
+// PasskeyOriginBinder is optionally implemented by a PasskeyCeremony so
+// wildcard RPOrigins (https://*.example.com) can admit the request Origin
+// before WebAuthn verifies the ceremony.
+type PasskeyOriginBinder interface {
+	AllowOrigin(origin string) error
+}
+
 // PasskeyCeremony is the WebAuthn begin/finish surface implemented by
 // providers/passkey. Keeping it as an interface means the core package does
 // not import go-webauthn; only apps that register a passkey provider pull that
