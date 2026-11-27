@@ -101,17 +101,32 @@ func TestSignInPageRendersProvidersAndForms(t *testing.T) {
 }
 
 func TestSignInPageRejectsForeignRedirects(t *testing.T) {
+	// No TrustedRedirectOrigins → absolute http(s) is allowed; other schemes
+	// and protocol-relative forms still fall back to "/".
 	a := uiAuth(t, Config{})
-	for _, target := range []string{"https://evil.test/x", "//evil.test/x", "/\\evil.test", "javascript:alert(1)"} {
+	for _, target := range []string{"//evil.test/x", "/\\evil.test", "javascript:alert(1)"} {
 		rec := do(t, a.Handler(), http.MethodGet, DefaultBasePath+"/signin?redirectUrl="+url.QueryEscape(target), nil, nil)
 		if !strings.Contains(rec.Body.String(), `data-redirect="/"`) {
 			t.Errorf("redirect %q was not replaced with /", target)
 		}
 	}
-	// The web middleware sends absolute same-origin URLs; those are kept.
-	rec := do(t, a.Handler(), http.MethodGet, DefaultBasePath+"/signin?redirectUrl="+url.QueryEscape("http://example.com/app?tab=2"), nil, nil)
+	rec := do(t, a.Handler(), http.MethodGet, DefaultBasePath+"/signin?redirectUrl="+url.QueryEscape("https://anywhere.example/x"), nil, nil)
+	if !strings.Contains(rec.Body.String(), `data-redirect="https://anywhere.example/x"`) {
+		t.Error("empty allowlist should keep absolute https redirectUrl")
+	}
+
+	// AuthURL same-origin absolute URLs are rewritten to a path.
+	a = uiAuth(t, Config{AuthURL: "http://example.com"})
+	rec = do(t, a.Handler(), http.MethodGet, DefaultBasePath+"/signin?redirectUrl="+url.QueryEscape("http://example.com/app?tab=2"), nil, nil)
 	if !strings.Contains(rec.Body.String(), `data-redirect="/app?tab=2"`) {
 		t.Error("same-origin absolute redirect was dropped")
+	}
+
+	// Non-empty allowlist rejects foreign origins.
+	a = uiAuth(t, Config{TrustedRedirectOrigins: []string{"https://app.example.com"}})
+	rec = do(t, a.Handler(), http.MethodGet, DefaultBasePath+"/signin?redirectUrl="+url.QueryEscape("https://evil.test/x"), nil, nil)
+	if !strings.Contains(rec.Body.String(), `data-redirect="/"`) {
+		t.Error("allowlisted config should reject foreign redirectUrl")
 	}
 }
 
